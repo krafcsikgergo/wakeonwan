@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "591972039994",
+    "project_id": "wake-on-wan-5b1e7",
+    "storage_bucket": "wake-on-wan-5b1e7.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:591972039994:android:b6251196ca0ea2b1d16403",
+        "android_client_info": {
+          "package_name": "hu.krafcsikgergo.wakeonwan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNFaz5exwTXcGGDYi89kDKHDlhv52y-iE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
