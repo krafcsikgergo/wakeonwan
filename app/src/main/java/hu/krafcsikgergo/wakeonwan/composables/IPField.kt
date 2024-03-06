@@ -24,8 +24,8 @@ fun IPTextField(ipAddress: String, onValueChange: (String) -> Unit) {
     var isError by remember { mutableStateOf(false) }
 
     TextField(
-        modifier = Modifier.padding(all = 20.dp)
-            .wrapContentWidth(),
+        modifier = Modifier
+            .width(200.dp),
         value = ipAddress,
         label = { Text("IP address") },
         keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
