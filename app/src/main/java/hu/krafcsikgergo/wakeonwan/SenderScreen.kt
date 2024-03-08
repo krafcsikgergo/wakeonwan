@@ -52,7 +52,7 @@ enum class Status {
 }
 
 @Composable
-fun SenderScreen(navigate: () -> Unit) {
+fun SenderScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     var isServerLive by remember { mutableStateOf(Status.UNKNOWN) }
@@ -68,11 +68,7 @@ fun SenderScreen(navigate: () -> Unit) {
                 ApiImplementation.baseUrl =
                     "http://$ipAddress:$communicationPort"
                 val network = NetworkManager()
-                val ktorServerLiveResponse =
-                    network.checkKtorServerHealth { it: String ->
-                        Toast.makeText(context, it, Toast.LENGTH_SHORT)
-                            .show()
-                    }
+                val ktorServerLiveResponse = network.checkKtorServerHealth()
                 isKtorServerLive = if (ktorServerLiveResponse) {
                     Status.LIVE
                 } else {
@@ -89,10 +85,7 @@ fun SenderScreen(navigate: () -> Unit) {
                 ApiImplementation.baseUrl =
                     "http://$ipAddress:$communicationPort"
                 val network = NetworkManager()
-                val serverIsLive = network.getServerStatus { it: String ->
-                    Toast.makeText(context, it, Toast.LENGTH_SHORT)
-                        .show()
-                }
+                val serverIsLive = network.getServerStatus()
                 isServerLive = if (serverIsLive) {
                     Status.LIVE
                 } else {
@@ -146,6 +139,12 @@ fun SenderScreen(navigate: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            Text(
+                text = "Receiver device settings",
+                fontSize = 22.sp,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
 
             IPTextField(ipAddress = ipAddress) {
                 ipAddress = it
@@ -201,9 +200,18 @@ fun SenderScreen(navigate: () -> Unit) {
 
             }
 
+            Spacer(modifier = Modifier.height(100.dp))
 
+            Button(modifier = Modifier
+                .height(50.dp),
+                enabled = !sendingMagicPackageInProgress,
+                onClick = {
+                    navigteToSchedules()
+                }) {
+                Text("Schedules")
+            }
 
-            Spacer(modifier = Modifier.height(250.dp))
+            Spacer(modifier = Modifier.height(100.dp))
 
             // Status title
             Text(

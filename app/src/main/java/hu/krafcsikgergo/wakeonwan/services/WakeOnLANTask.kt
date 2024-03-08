@@ -5,7 +5,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 
 
-suspend fun sendWakeOnLANPacket(ipAddress: String, macAddress: String) {
+fun sendWakeOnLANPacket(ipAddress: String, macAddress: String) {
     try {
 
         var delimiter = ":"

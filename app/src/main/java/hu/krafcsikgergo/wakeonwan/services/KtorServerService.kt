@@ -19,8 +19,11 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -170,6 +173,26 @@ fun Application.module() {
                     HttpStatusCode.InternalServerError,
                     mapOf("message" to "Failed to send shutdown request")
                 )
+            }
+        }
+
+        post("/schedules") {
+            val schedule = call.receive<Schedule>()
+            ServerData.schedules.add(schedule)
+            call.respond(HttpStatusCode.OK, mapOf("message" to "Schedule added successfully"))
+        }
+
+        get("/schedules") {
+            call.respond(HttpStatusCode.OK, ServerData.schedules)
+        }
+
+        delete("/schedules/{index}") {
+            val index = call.parameters["index"]?.toInt() ?: -1
+            if (index < 0 || index >= ServerData.schedules.size) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Invalid index"))
+            } else {
+                ServerData.schedules.removeAt(index)
+                call.respond(HttpStatusCode.OK, mapOf("message" to "Schedule deleted successfully"))
             }
         }
     }

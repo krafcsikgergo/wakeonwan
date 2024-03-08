@@ -1,6 +1,7 @@
 package hu.krafcsikgergo.wakeonwan.composables
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -22,7 +23,9 @@ fun MacAddressTextField(macAddress: String, onValueChange: (String) -> Unit) {
     var isError by remember { mutableStateOf(false) }
 
     TextField(
-        modifier = Modifier.padding(all = 20.dp),
+        modifier = Modifier
+            .padding(all = 20.dp)
+            .width(200.dp),
         value = macAddress,
         label = { Text("MAC address") },
         keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Password),

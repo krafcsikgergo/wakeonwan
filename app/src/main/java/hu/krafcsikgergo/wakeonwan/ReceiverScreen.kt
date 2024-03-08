@@ -93,7 +93,7 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 },
                 modifier = Modifier
                     .padding(all = 20.dp)
-                    .width(170.dp)
+                    .width(200.dp)
             )
 
             Row(
