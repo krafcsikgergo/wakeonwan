@@ -1,5 +1,6 @@
 package hu.krafcsikgergo.wakeonwan
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -65,8 +66,8 @@ fun SenderScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
         isKtorServerLive = Status.LOADING
         if (isValidPort(communicationPort.toString()) && isValidIPv4(ipAddress)) {
             coroutineScope.launch(Dispatchers.IO) {
-                ApiImplementation.baseUrl =
-                    "http://$ipAddress:$communicationPort"
+                ApiImplementation.baseUrl = "http://$ipAddress:$communicationPort"
+                Log.d("KtorServer", "Testing Ktor server status at: $ipAddress:$communicationPort")
                 val network = NetworkManager()
                 val ktorServerLiveResponse = network.checkKtorServerHealth()
                 isKtorServerLive = if (ktorServerLiveResponse) {

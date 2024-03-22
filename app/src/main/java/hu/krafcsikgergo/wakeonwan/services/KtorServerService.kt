@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.google.gson.Gson
 import hu.krafcsikgergo.wakeonwan.R
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
@@ -27,6 +28,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class KtorServerService : Service() {
 
@@ -70,8 +72,10 @@ class KtorServerService : Service() {
 
     private fun startForegroundService() {
         val notificationIntent = Intent(this, KtorServerService::class.java)
-        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, notificationIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
 
         val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -155,7 +159,7 @@ fun Application.module() {
             }
         }
 
-        get("/shutdown"){
+        get("/shutdown") {
             Log.d("Server", "Received request to shutdown")
             val sshPort = ServerData.sshPort
             val ipAddress = ServerData.ipAddress
@@ -167,7 +171,10 @@ fun Application.module() {
                 sshManager.executeCommand("sudo shutdown now")
             }
             if (isShutdown) {
-                call.respond(HttpStatusCode.OK, mapOf("message" to "Shutdown request sent successfully"))
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf("message" to "Shutdown request sent successfully")
+                )
             } else {
                 call.respond(
                     HttpStatusCode.InternalServerError,
@@ -178,24 +185,37 @@ fun Application.module() {
 
         post("/schedules") {
             val schedule = call.receive<Schedule>()
-            ServerData.schedules.add(schedule)
+            saveSchedule(schedule)
             call.respond(HttpStatusCode.OK, mapOf("message" to "Schedule added successfully"))
         }
 
         get("/schedules") {
-            call.respond(HttpStatusCode.OK, ServerData.schedules)
+            val schedules = readSchedules()
+            call.respond(HttpStatusCode.OK, schedules)
         }
 
-        delete("/schedules/{index}") {
-            val index = call.parameters["index"]?.toInt() ?: -1
-            if (index < 0 || index >= ServerData.schedules.size) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("message" to "Invalid index"))
-            } else {
-                ServerData.schedules.removeAt(index)
-                call.respond(HttpStatusCode.OK, mapOf("message" to "Schedule deleted successfully"))
-            }
+        delete("/schedules/{id}") {
+            val scheduleId = call.parameters["id"]?.toInt() ?: return@delete
+            deleteSchedule(scheduleId)
+            call.respond(HttpStatusCode.OK, mapOf("message" to "Schedule deleted successfully"))
         }
     }
 }
 
 
+fun saveSchedule(schedule: Schedule) {
+    val schedules = readSchedules().toMutableList()
+    schedules.add(schedule)
+    File("schedules.json").writeText(Gson().toJson(schedules))
+}
+
+fun readSchedules(): List<Schedule> {
+    val file = File("schedules.json")
+    if (!file.exists()) return emptyList()
+    return Gson().fromJson(file.readText(), Array<Schedule>::class.java).toList()
+}
+
+fun deleteSchedule(scheduleId: Int) {
+    val schedules = readSchedules().filterNot { it.id == scheduleId }
+    File("schedules.json").writeText(Gson().toJson(schedules))
+}

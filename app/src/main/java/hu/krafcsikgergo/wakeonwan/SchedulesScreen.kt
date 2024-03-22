@@ -106,7 +106,8 @@ fun SchedulesScreen(onBack: () -> Unit) {
             .fillMaxWidth()
             .padding(16.dp),
             onClick = {
-                val newSchedule = Schedule(time, turnOn, daysOfWeek.map { it.value })
+                val randomId = (0..100000).random()
+                val newSchedule = Schedule(randomId, time, turnOn, daysOfWeek.map { it.value })
                 schedules.add(newSchedule)
                 coroutineScope.launch {
                     NetworkManager().saveSchedule(newSchedule)
