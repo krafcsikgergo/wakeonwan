@@ -103,27 +103,31 @@ fun NavHost(
                         }
                     }
 
-                },
-                navigteToSchedules = {
-                    navController.navigate(NavigationItem.Schedules.route) {
-                        popUpTo(NavigationItem.Sender.route) {
-                            inclusive = true
-                        }
-                    }
-                })
+                }
+            )
         }
 
         composable(
             NavigationItem.Receiver.route,
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            ReceiverScreen() {
-                navController.navigate(NavigationItem.Sender.route) {
-                    popUpTo(NavigationItem.Receiver.route) {
-                        inclusive = true
+            ReceiverScreen(
+                navigate = {
+                    navController.navigate(NavigationItem.Sender.route) {
+                        popUpTo(NavigationItem.Receiver.route) {
+                            inclusive = true
+                        }
+                    }
+
+                },
+                navigteToSchedules = {
+                    navController.navigate(NavigationItem.Schedules.route) {
+                        popUpTo(NavigationItem.Receiver.route) {
+                            inclusive = true
+                        }
                     }
                 }
-            }
+            )
         }
 
         composable(
@@ -131,7 +135,7 @@ fun NavHost(
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             SchedulesScreen() {
-                navController.navigate(NavigationItem.Sender.route) {
+                navController.navigate(NavigationItem.Receiver.route) {
                     popUpTo(NavigationItem.Schedules.route) {
                         inclusive = true
                     }

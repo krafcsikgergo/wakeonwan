@@ -45,7 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReceiverScreen(navigate: () -> Unit) {
+fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var ipAddress by remember { mutableStateOf(ServerData.ipAddress) }
@@ -88,7 +88,8 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 onValueChange = { it: Int ->
                     sshPort = it
                     coroutineScope.launch(Dispatchers.IO) {
-                        DataStoreManager.getInstance(context).writeString("serverSSHPort", it.toString())
+                        DataStoreManager.getInstance(context)
+                            .writeString("serverSSHPort", it.toString())
                     }
                 },
                 modifier = Modifier
@@ -141,6 +142,14 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 }
             ) {
                 Text("Start listening for remote requests")
+            }
+
+            Button(modifier = Modifier
+                .height(50.dp),
+                onClick = {
+                    navigteToSchedules()
+                }) {
+                Text("Schedules")
             }
 
             Spacer(modifier = Modifier.height(100.dp))
