@@ -14,10 +14,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.gson.Gson
 import hu.krafcsikgergo.wakeonwan.services.ApiImplementation
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.NetworkManager
 import hu.krafcsikgergo.wakeonwan.services.Schedule
+import hu.krafcsikgergo.wakeonwan.services.ScheduleManager
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -32,10 +34,59 @@ fun SchedulesScreen(onBack: () -> Unit) {
     val schedules = remember { mutableStateListOf<Schedule>() }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val gson = Gson()
+
+    fun getSchedules() {
+        coroutineScope.launch {
+            // Load schedules from DataStore
+            val schedulesDataString = DataStoreManager.getInstance(context).getString("schedules")
+            if (schedulesDataString == null || schedulesDataString.isEmpty()) {
+                return@launch
+            }
+
+            // Convert the schedules data string to a list of Schedule objects
+            val schedulesData: List<Schedule> =
+                gson.fromJson(schedulesDataString, Array<Schedule>::class.java).toList()
+
+            // Update the schedules list
+            schedules.clear()
+            schedules.addAll(schedulesData)
+        }
+    }
+
+    fun saveSchedule(newSchedule: Schedule) {
+        // Add new schedule to the list of schedules
+        schedules.add(newSchedule)
+
+        // Convert the list of Schedule objects to a JSON string
+        val newSchedulesDataString = gson.toJson(schedules)
+
+        // Save the new schedules data string to the DataStore
+        coroutineScope.launch {
+            DataStoreManager.getInstance(context).writeString("schedules", newSchedulesDataString)
+        }
+
+        // Reset schedules runs
+        ScheduleManager.scheduleAlarms(context, schedules)
+    }
+
+    fun deleteSchedule(schedule: Schedule) {
+        // Remove the schedule from the list of schedules
+        schedules.remove(schedule)
+
+        // Convert the list of Schedule objects to a JSON string
+        val newSchedulesDataString = gson.toJson(schedules)
+
+        // Save the new schedules data string to the DataStore
+        coroutineScope.launch {
+            DataStoreManager.getInstance(context).writeString("schedules", newSchedulesDataString)
+        }
+    }
 
     // Load schedules from API
     LaunchedEffect(Unit) {
-        schedules.addAll(NetworkManager().getSchedules())
+        // Get schedules
+        getSchedules()
     }
 
     Column(
@@ -108,10 +159,7 @@ fun SchedulesScreen(onBack: () -> Unit) {
             onClick = {
                 val randomId = (0..100000).random()
                 val newSchedule = Schedule(randomId, time, turnOn, daysOfWeek.map { it.value })
-                schedules.add(newSchedule)
-                coroutineScope.launch {
-                    NetworkManager().saveSchedule(newSchedule)
-                }
+                saveSchedule(newSchedule)
                 Toast.makeText(context, "Schedule saved", Toast.LENGTH_SHORT).show()
             }) {
             Text("Save")
@@ -140,10 +188,7 @@ fun SchedulesScreen(onBack: () -> Unit) {
         // List of Schedules
         schedules.forEachIndexed { index, schedule ->
             ScheduleItem(schedule, onDelete = {
-                schedules.removeAt(index)
-                coroutineScope.launch {
-                    NetworkManager().deleteSchedule(index)
-                }
+                deleteSchedule(schedule)
                 Toast.makeText(context, "Schedule deleted", Toast.LENGTH_SHORT).show()
             })
         }
@@ -218,7 +263,13 @@ fun TimePicker(selectedTime: LocalTime, onTimeSelected: (LocalTime) -> Unit) {
 fun ScheduleItem(schedule: Schedule, onDelete: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "${schedule.time.format(DateTimeFormatter.ofPattern("HH:mm"))} - ${if (schedule.turnOn) "On" else "Off"} - ${
+            "${if (schedule.turnOn) "On" else "Off"} - ${
+                schedule.time.format(
+                    DateTimeFormatter.ofPattern(
+                        "HH:mm"
+                    )
+                )
+            } - ${
                 schedule.days.mapIndexedNotNull { index, selected ->
                     if (selected) listOf(
                         "M",

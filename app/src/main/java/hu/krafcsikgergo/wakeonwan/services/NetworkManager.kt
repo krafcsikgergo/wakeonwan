@@ -61,31 +61,4 @@ class NetworkManager {
         }
     }
 
-    suspend fun getSchedules(): List<Schedule> {
-        try {
-            val response = ApiImplementation.getInstance().getSchedules()
-            val jsonResponse = response.body()?.string()
-            val gson = Gson()
-            return gson.fromJson(jsonResponse, Array<Schedule>::class.java).toList()
-        } catch (e: Exception) {
-            Log.e("Get schedules", e.message.toString())
-            return emptyList()
-        }
-    }
-
-    suspend fun saveSchedule(schedule: Schedule) {
-        try {
-            ApiImplementation.getInstance().saveSchedule(schedule)
-        } catch (e: Exception) {
-            Log.e("Save schedule", e.message.toString())
-        }
-    }
-
-    suspend fun deleteSchedule(index: Int) {
-        try {
-            ApiImplementation.getInstance().deleteSchedule(index)
-        } catch (e: Exception) {
-            Log.e("Delete schedule", e.message.toString())
-        }
-    }
 }

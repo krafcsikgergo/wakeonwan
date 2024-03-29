@@ -127,13 +127,22 @@ fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
                 .height(100.dp)
                 .padding(all = 20.dp),
                 onClick = {
+                    // Stop any running instance of KtorServerService
+                    val stopIntent = Intent(context, KtorServerService::class.java)
+                    context.stopService(stopIntent)
+
+                    // Update ServerData with the current input values
                     ServerData.ipAddress = ipAddress
                     ServerData.macAddress = macAddress
                     ServerData.sshPort = sshPort
                     ServerData.username = username
                     ServerData.password = password
+
+                    // Start a new instance of KtorServerService
                     val intent = Intent(context, KtorServerService::class.java)
                     context.startService(intent)
+
+                    // Show a toast message
                     Toast.makeText(
                         context,
                         "Server started with server data: ${ipAddress + macAddress}",
