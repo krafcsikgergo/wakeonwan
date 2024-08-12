@@ -45,7 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReceiverScreen(navigate: () -> Unit) {
+fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var ipAddress by remember { mutableStateOf(ServerData.ipAddress) }
@@ -88,12 +88,13 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 onValueChange = { it: Int ->
                     sshPort = it
                     coroutineScope.launch(Dispatchers.IO) {
-                        DataStoreManager.getInstance(context).writeString("serverSSHPort", it.toString())
+                        DataStoreManager.getInstance(context)
+                            .writeString("serverSSHPort", it.toString())
                     }
                 },
                 modifier = Modifier
                     .padding(all = 20.dp)
-                    .width(170.dp)
+                    .width(200.dp)
             )
 
             Row(
@@ -126,13 +127,22 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 .height(100.dp)
                 .padding(all = 20.dp),
                 onClick = {
+                    // Stop any running instance of KtorServerService
+                    val stopIntent = Intent(context, KtorServerService::class.java)
+                    context.stopService(stopIntent)
+
+                    // Update ServerData with the current input values
                     ServerData.ipAddress = ipAddress
                     ServerData.macAddress = macAddress
                     ServerData.sshPort = sshPort
                     ServerData.username = username
                     ServerData.password = password
+
+                    // Start a new instance of KtorServerService
                     val intent = Intent(context, KtorServerService::class.java)
                     context.startService(intent)
+
+                    // Show a toast message
                     Toast.makeText(
                         context,
                         "Server started with server data: ${ipAddress + macAddress}",
@@ -141,6 +151,14 @@ fun ReceiverScreen(navigate: () -> Unit) {
                 }
             ) {
                 Text("Start listening for remote requests")
+            }
+
+            Button(modifier = Modifier
+                .height(50.dp),
+                onClick = {
+                    navigteToSchedules()
+                }) {
+                Text("Schedules")
             }
 
             Spacer(modifier = Modifier.height(100.dp))

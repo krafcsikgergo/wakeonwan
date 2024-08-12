@@ -95,27 +95,54 @@ fun NavHost(
             NavigationItem.Sender.route,
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            SenderScreen() {
-                navController.navigate(NavigationItem.Receiver.route) {
-                    popUpTo(NavigationItem.Sender.route) {
-                        inclusive = true
+            SenderScreen(
+                navigate = {
+                    navController.navigate(NavigationItem.Receiver.route) {
+                        popUpTo(NavigationItem.Sender.route) {
+                            inclusive = true
+                        }
                     }
+
                 }
-            }
+            )
         }
 
         composable(
             NavigationItem.Receiver.route,
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            ReceiverScreen() {
-                navController.navigate(NavigationItem.Sender.route) {
-                    popUpTo(NavigationItem.Receiver.route) {
+            ReceiverScreen(
+                navigate = {
+                    navController.navigate(NavigationItem.Sender.route) {
+                        popUpTo(NavigationItem.Receiver.route) {
+                            inclusive = true
+                        }
+                    }
+
+                },
+                navigteToSchedules = {
+                    navController.navigate(NavigationItem.Schedules.route) {
+                        popUpTo(NavigationItem.Receiver.route) {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
+        }
+
+        composable(
+            NavigationItem.Schedules.route,
+            enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
+            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
+            SchedulesScreen() {
+                navController.navigate(NavigationItem.Receiver.route) {
+                    popUpTo(NavigationItem.Schedules.route) {
                         inclusive = true
                     }
                 }
             }
         }
+
     }
 }
 
@@ -123,4 +150,5 @@ fun NavHost(
 sealed class NavigationItem(val route: String) {
     object Sender : NavigationItem("sender")
     object Receiver : NavigationItem("receiver")
+    object Schedules : NavigationItem("schedules")
 }

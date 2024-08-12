@@ -2,16 +2,11 @@ package hu.krafcsikgergo.wakeonwan.services
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.dataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 
 class DataStoreManager private constructor(val context: Context) {
     companion object {
@@ -26,19 +21,20 @@ class DataStoreManager private constructor(val context: Context) {
             }
         }
     }
-        private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-        suspend fun getString(keyString: String): String? {
-            val key = stringPreferencesKey(keyString)
-            val preferences = context.dataStore.data.first()
-            return preferences[key]
-        }
+    private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-        suspend fun writeString(keyString: String, value: String) {
-            val key = stringPreferencesKey(keyString)
-            context.dataStore.edit { settings ->
-                settings[key] = value
-            }
-
+    suspend fun getString(keyString: String): String? {
+        val key = stringPreferencesKey(keyString)
+        val preferences = context.dataStore.data.first()
+        return preferences[key]
     }
+
+    suspend fun writeString(keyString: String, value: String) {
+        val key = stringPreferencesKey(keyString)
+        context.dataStore.edit { settings ->
+            settings[key] = value
+        }
+    }
+
 }
