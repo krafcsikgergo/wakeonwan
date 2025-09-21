@@ -26,7 +26,7 @@ fun IPTextField(
             isError = !isValidIPv4(it)
             onValueChange(it)
         },
-        label = { Text("IP Address") },
+        label = { Text("IP Address", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         placeholder = { Text("e.g., 192.168.1.100") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,

@@ -13,12 +13,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.ui.screens.ReceiverScreen
 import hu.krafcsikgergo.wakeonwan.ui.screens.SchedulesScreen
 import hu.krafcsikgergo.wakeonwan.ui.screens.SenderScreen
@@ -27,10 +34,17 @@ import org.koin.core.component.KoinComponent
 
 class MainActivity : ComponentActivity(), KoinComponent {
 
+    val dataStoreManager: DataStoreManager by lazy { getKoin().get() }
+    private var isDataLoaded = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        installSplashScreen()
+
+        val splashScreen = installSplashScreen()
+
+        // Keep splash screen visible until data is loaded
+        splashScreen.setKeepOnScreenCondition { !isDataLoaded }
 
         setContent {
             // Remove when https://issuetracker.google.com/issues/364713509 is fixed
@@ -40,7 +54,10 @@ class MainActivity : ComponentActivity(), KoinComponent {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavHost()
+                    WakeOnWANNavigation(
+                        dataStoreManager = dataStoreManager,
+                        onDataLoaded = { isDataLoaded = true }
+                    )
                 }
             }
         }
@@ -48,10 +65,39 @@ class MainActivity : ComponentActivity(), KoinComponent {
 }
 
 @Composable
+fun WakeOnWANNavigation(
+    dataStoreManager: DataStoreManager,
+    onDataLoaded: () -> Unit
+) {
+    var startDestination by remember { mutableStateOf<String?>(null) }
+
+    // Load the last page asynchronously
+    LaunchedEffect(Unit) {
+        val loadedLastPage = dataStoreManager.getLastPage() ?: NavigationItem.Sender.route
+        startDestination = when (loadedLastPage) {
+            NavigationItem.Sender.route,
+            NavigationItem.Receiver.route -> loadedLastPage
+
+            else -> NavigationItem.Sender.route
+        }
+        // Notify that data is loaded
+        onDataLoaded()
+    }
+
+    // Only show navigation once we have loaded the start destination
+    startDestination?.let { destination ->
+        NavHost(startDestination = destination, dataStoreManager = dataStoreManager)
+    }
+}
+
+@Composable
 fun NavHost(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = NavigationItem.Sender.route,
+    startDestination: String,
+    dataStoreManager: DataStoreManager
 ) {
+    val coroutineScope = rememberCoroutineScope()
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -62,6 +108,9 @@ fun NavHost(
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             SenderScreen(
                 navigateToReceiver = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Receiver.route)
+                    }
                     navController.navigate(NavigationItem.Receiver.route) {
                         popUpTo(NavigationItem.Sender.route) {
                             inclusive = true
@@ -77,6 +126,9 @@ fun NavHost(
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             ReceiverScreen(
                 navigateToSender = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Sender.route)
+                    }
                     navController.navigate(NavigationItem.Sender.route) {
                         popUpTo(NavigationItem.Receiver.route) {
                             inclusive = true
@@ -84,6 +136,9 @@ fun NavHost(
                     }
                 },
                 navigateToSchedules = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Schedules.route)
+                    }
                     navController.navigate(NavigationItem.Schedules.route)
                 }
             )

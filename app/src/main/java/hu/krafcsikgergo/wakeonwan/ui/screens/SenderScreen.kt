@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -91,8 +92,9 @@ fun SenderScreen(navigateToReceiver: () -> Unit) {
 
         Column(
             modifier = Modifier
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.SpaceAround,
+                .fillMaxWidth()
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -197,11 +199,6 @@ fun ServerSelectorSection(
             .padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Select Server",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
 
         Card(
             modifier = Modifier
@@ -430,7 +427,7 @@ fun ActionButton(
         ),
         modifier = Modifier
             .height(72.dp)
-            .width(120.dp)
+            .width(160.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -444,7 +441,7 @@ fun ActionButton(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelSmall
+                style = MaterialTheme.typography.titleMedium
             )
         }
     }

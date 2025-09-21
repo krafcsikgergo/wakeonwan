@@ -107,10 +107,13 @@ class ReceiverViewModel(
             try {
                 val success = wakeOnLanService.startKtorServer()
                 if (success) {
+                    val serverStarted = wakeOnLanService.serverStarted
+                    Log.d("ReceiverViewModel", "Server started successfully. Timestamp: $serverStarted")
                     uiState = uiState.copy(
                         isKtorServerRunning = true,
                         isKtorServerOperationInProgress = false,
                         lastOperationMessage = "Ktor server started successfully",
+                        serverStarted = serverStarted,
                         errorMessage = null
                     )
                 } else {
@@ -141,6 +144,7 @@ class ReceiverViewModel(
                         isKtorServerRunning = false,
                         isKtorServerOperationInProgress = false,
                         lastOperationMessage = "Ktor server stopped successfully",
+                        serverStarted = null,
                         errorMessage = null
                     )
                 } else {
@@ -165,8 +169,11 @@ class ReceiverViewModel(
         viewModelScope.launch {
             try {
                 val isRunning = wakeOnLanService.isKtorServerRunning()
+                val serverStarted = wakeOnLanService.serverStarted
+                Log.d("ReceiverViewModel", "Server status check - Running: $isRunning, Started: $serverStarted")
                 uiState = uiState.copy(
                     isKtorServerRunning = isRunning,
+                    serverStarted = serverStarted,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -269,5 +276,6 @@ data class ReceiverUiState(
     val isKtorServerOperationInProgress: Boolean = false,
     val isTestWakeOnLanInProgress: Boolean = false,
     val lastOperationMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val serverStarted: Long? = null
 )

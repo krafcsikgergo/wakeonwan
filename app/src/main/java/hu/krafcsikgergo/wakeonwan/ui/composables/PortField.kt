@@ -34,7 +34,7 @@ fun PortTextField(
                 !isValidPort(newValue)
             }
         },
-        label = { Text(label) },
+        label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         placeholder = { Text("e.g., 9753") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,

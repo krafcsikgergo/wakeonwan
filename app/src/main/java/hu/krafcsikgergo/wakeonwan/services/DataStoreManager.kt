@@ -14,6 +14,9 @@ import kotlinx.serialization.json.Json
 
 
 interface DataStoreManager {
+    suspend fun saveLastPage(page: String)
+    suspend fun getLastPage(): String?
+
     suspend fun saveServerData(serverData: ServerData)
     suspend fun getServerData(): ServerData?
     suspend fun saveSchedule(schedule: Schedule)
@@ -31,9 +34,12 @@ class DataStoreManagerImpl(
 ) : DataStoreManager {
     private val TAG = "DataStoreManager"
     private val json = Json { ignoreUnknownKeys = true }
+
+    private val Context.commonDataStore: DataStore<Preferences> by preferencesDataStore(name = "common")
     private val Context.receiverDataStore: DataStore<Preferences> by preferencesDataStore(name = "receiver")
     private val Context.senderDataStore: DataStore<Preferences> by preferencesDataStore(name = "sender")
     
+    private val commonDataStore: DataStore<Preferences> get() = context.commonDataStore
     private val receiverDataStore: DataStore<Preferences> get() = context.receiverDataStore
     private val senderDataStore: DataStore<Preferences> get() = context.senderDataStore
 
@@ -49,6 +55,16 @@ class DataStoreManagerImpl(
         val preferences = dataStore.data.first()
         return preferences[preferenceKey]
     }
+
+    // COMMON
+    override suspend fun saveLastPage(page: String) {
+        saveString(commonDataStore, "lastPage", page)
+    }
+    
+    override suspend fun getLastPage(): String? {
+        return readString(commonDataStore, "lastPage")
+    }
+
 
     // RECEIVER
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
  * Handles the actual server service lifecycle and low-level network operations.
  */
 interface WakeOnLanService {
+    var serverStarted: Long?
 
     /**
      * Starts the Ktor server service.
@@ -86,12 +87,27 @@ class WakeOnLanServiceImpl(
 ) : WakeOnLanService {
 
     private val TAG = "WakeOnLanService"
+    
+    override var serverStarted: Long? = null
 
     override suspend fun startKtorServer(): Boolean {
+        if (isKtorServerRunning()) {
+            Log.d(TAG, "Ktor server is already running.")
+            // If server is already running but we don't have a start time, set it now
+            if (serverStarted == null) {
+                serverStarted = System.currentTimeMillis()
+                Log.d(TAG, "Set server start time for existing running server: $serverStarted")
+            }
+            return true
+        }
+
         return try {
             withContext(Dispatchers.Main) {
                 val intent = Intent(context, KtorServerService::class.java)
                 val result = context.startService(intent)
+                if (result != null) {
+                    serverStarted = System.currentTimeMillis()
+                }
                 result != null
             }.also { success ->
                 Log.d(TAG, "Ktor server start attempt: ${if (success) "success" else "failed"}")
@@ -107,6 +123,7 @@ class WakeOnLanServiceImpl(
             withContext(Dispatchers.Main) {
                 val intent = Intent(context, KtorServerService::class.java)
                 context.stopService(intent)
+                serverStarted = null
                 true
             }.also {
                 Log.d(TAG, "Ktor server stop attempt: success")
