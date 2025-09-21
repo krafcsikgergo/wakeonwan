@@ -50,7 +50,7 @@ class SenderViewModel(
         viewModelScope.launch {
             try {
                 val baseUrl = getBaseUrl()
-                val isHealthy = networkRepository.checkServerHealth(baseUrl)
+                val isHealthy = networkRepository.checkKtorAppHealth(baseUrl)
                 uiState = uiState.copy(
                     ktorServerStatus = if (isHealthy) ServerStatus.LIVE else ServerStatus.DEAD,
                     errorMessage = null

@@ -120,7 +120,10 @@ class KtorServerService : Service() {
 
         routing {
             get("/") {
-                call.respond(HttpStatusCode.Companion.OK, mapOf("message" to "Ktor server is running"))
+                call.respond(
+                    HttpStatusCode.Companion.OK,
+                    mapOf("message" to "Ktor server is running")
+                )
             }
 
             get("/wakeup") {
@@ -164,14 +167,35 @@ class KtorServerService : Service() {
                     ping(ipAddress)
                 }
 
-                Log.d("Server", "Host is reachable: $isReachable")
-                if (isReachable) {
-                    call.respond(HttpStatusCode.Companion.OK, mapOf("message" to "Host is reachable"))
-                } else {
-                    call.respond(
-                        HttpStatusCode.Companion.ServiceUnavailable,
-                        mapOf("message" to "Host is not reachable")
+                Log.d("Server", "Host is reachable via ping: $isReachable")
+
+                // If ping fails, don't bother testing SSH
+                if (!isReachable) {
+                    val response = mapOf(
+                        "ping" to false,
+                        "ssh" to false,
+                        "message" to "Host is not reachable via ping, SSH test skipped"
                     )
+                    call.respond(HttpStatusCode.Companion.ServiceUnavailable, response)
+                    return@get
+                }
+
+                val sshConnectable = withContext(Dispatchers.IO) {
+                    sshManager.testConnection()
+                }
+
+                Log.d("Server", "Host is reachable via SSH: $sshConnectable")
+
+                val response = mutableMapOf<String, Any>()
+                response["ping"] = true
+                response["ssh"] = sshConnectable
+
+                if (sshConnectable) {
+                    response["message"] = "Host is fully reachable (ping and SSH)"
+                    call.respond(HttpStatusCode.Companion.OK, response)
+                } else {
+                    response["message"] = "Host is reachable via ping but SSH connection failed"
+                    call.respond(HttpStatusCode.Companion.PartialContent, response)
                 }
             }
 
@@ -212,7 +236,10 @@ class KtorServerService : Service() {
                 // Instead of file operations, use DataStore
                 // You might need to extend DataStoreManager to handle schedules
                 dataStoreManager.saveSchedule(schedule)
-                call.respond(HttpStatusCode.Companion.OK, mapOf("message" to "Schedule added successfully"))
+                call.respond(
+                    HttpStatusCode.Companion.OK,
+                    mapOf("message" to "Schedule added successfully")
+                )
             }
 
             get("/schedules") {
@@ -224,7 +251,10 @@ class KtorServerService : Service() {
             delete("/schedules/{id}") {
                 val scheduleId = call.parameters["id"]?.toInt() ?: return@delete
                 dataStoreManager.removeSchedule(scheduleId)
-                call.respond(HttpStatusCode.Companion.OK, mapOf("message" to "Schedule deleted successfully"))
+                call.respond(
+                    HttpStatusCode.Companion.OK,
+                    mapOf("message" to "Schedule deleted successfully")
+                )
             }
         }
     }

@@ -31,7 +31,7 @@ interface NetworkRepository {
      * @param baseUrl The base URL for the server (e.g., "http://192.168.1.100:8080")
      * @return true if server is healthy, false otherwise
      */
-    suspend fun checkServerHealth(baseUrl: String): Boolean
+    suspend fun checkKtorAppHealth(baseUrl: String): Boolean
 
     /**
      * Checks the server status endpoint.
@@ -85,11 +85,14 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun checkServerHealth(baseUrl: String): Boolean {
+    override suspend fun checkKtorAppHealth(baseUrl: String): Boolean {
         return try {
             val response = httpClient.get("$baseUrl/")
             val isHealthy = response.status.value in 200..299
-            Log.d("NetworkRepository", "Server health check: $isHealthy")
+            Log.d(
+                "NetworkRepository",
+                "Server health check: $isHealthy, response status: ${response.status}"
+            )
             isHealthy
         } catch (e: Exception) {
             Log.e("NetworkRepository", "Health check error: ${e.message}")
@@ -99,9 +102,13 @@ class NetworkRepositoryImpl(
 
     override suspend fun getServerStatus(baseUrl: String): Boolean {
         return try {
-            httpClient.get("$baseUrl/test")
-            Log.d("NetworkRepository", "Server status check: true")
-            true
+            val response = httpClient.get("$baseUrl/test")
+            val isHealthy = response.status.value in 200..299
+            Log.d(
+                "NetworkRepository",
+                "Server status check: $isHealthy, response status: ${response.status}"
+            )
+            isHealthy
         } catch (e: Exception) {
             Log.e("NetworkRepository", "Status check error: ${e.message}")
             false

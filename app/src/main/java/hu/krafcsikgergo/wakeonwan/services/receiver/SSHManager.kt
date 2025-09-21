@@ -7,6 +7,7 @@ import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 
 interface SSHManager {
     suspend fun executeCommand(command: String): Boolean
+    suspend fun testConnection(): Boolean
 }
 
 class SSHManagerImpl(
@@ -52,5 +53,27 @@ class SSHManagerImpl(
             return false
         }
 
+    }
+
+    override suspend fun testConnection(): Boolean {
+        return try {
+            val serverData = getServerData()
+            val jsch = JSch()
+
+            // Create SSH session
+            val session = jsch.getSession(serverData.username, serverData.ipAddress, serverData.sshPort)
+            session.setPassword(serverData.password)
+            session.setConfig("StrictHostKeyChecking", "no")
+            session.connect()
+
+            // Test successful, disconnect immediately
+            session.disconnect()
+            Log.d("SSHManager", "SSH connection test successful")
+            true
+
+        } catch (e: Exception) {
+            Log.d("SSHManager", "SSH connection test failed: ${e.message}")
+            false
+        }
     }
 }
