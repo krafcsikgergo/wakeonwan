@@ -22,12 +22,12 @@ import hu.krafcsikgergo.wakeonwan.ui.composables.MacAddressTextField
 import hu.krafcsikgergo.wakeonwan.ui.composables.PasswordInputField
 import hu.krafcsikgergo.wakeonwan.ui.composables.PortTextField
 import hu.krafcsikgergo.wakeonwan.ui.composables.UsernameInput
-import hu.krafcsikgergo.wakeonwan.ui.composables.topRow
+import hu.krafcsikgergo.wakeonwan.ui.composables.TopRow
 import hu.krafcsikgergo.wakeonwan.services.receiver.KtorServerService
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
-fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
+fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit) {
     val context = LocalContext.current
     val viewModel = koinViewModel<ReceiverViewModel>()
     val uiState = viewModel.uiState
@@ -50,9 +50,11 @@ fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
     }
 
     Column {
-        topRow(false) {
-            navigate()
-        }
+        TopRow(
+            title = "Receiver",
+            switchToText = "Switch to Sender",
+            onNavigate = navigateToSender
+        )
 
         Column(
             modifier = Modifier
@@ -62,9 +64,12 @@ fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            IPTextField(uiState.serverData.ipAddress) {
-                viewModel.updateServerIpAddress(it)
-            }
+            IPTextField(
+                ipAddress = uiState.serverData.ipAddress,
+                onValueChange = {
+                    viewModel.updateServerIpAddress(it)
+                }
+            )
 
             MacAddressTextField(uiState.serverData.macAddress) {
                 viewModel.updateMacAddress(it)
@@ -73,8 +78,11 @@ fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
             PortTextField(
                 port = uiState.serverData.sshPort.toString(),
                 label = "SSH port",
-                onValueChange = { port: Int ->
-                    viewModel.updateSshPort(port)
+                onValueChange = { portString ->
+                    val portInt = portString.toIntOrNull()
+                    if (portInt != null && portInt in 1..65535) {
+                        viewModel.updateSshPort(portInt)
+                    }
                 },
                 modifier = Modifier
                     .padding(all = 20.dp)
@@ -128,7 +136,7 @@ fun ReceiverScreen(navigate: () -> Unit, navigteToSchedules: () -> Unit) {
             Button(modifier = Modifier
                 .height(50.dp),
                 onClick = {
-                    navigteToSchedules()
+                    navigateToSchedules()
                 }) {
                 Text("Schedules")
             }

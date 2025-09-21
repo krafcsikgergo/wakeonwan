@@ -39,11 +39,6 @@ interface NetworkRepository {
      * @return true if server status endpoint responds, false otherwise
      */
     suspend fun getServerStatus(baseUrl: String): Boolean
-
-    /**
-     * Closes network resources.
-     */
-    fun close()
 }
 
 /**
@@ -110,15 +105,6 @@ class NetworkRepositoryImpl(
         } catch (e: Exception) {
             Log.e("NetworkRepository", "Status check error: ${e.message}")
             false
-        }
-    }
-
-    override fun close() {
-        try {
-            httpClient.close()
-            Log.d("NetworkRepository", "HTTP client closed")
-        } catch (e: Exception) {
-            Log.e("NetworkRepository", "Error closing HTTP client: ${e.message}")
         }
     }
 

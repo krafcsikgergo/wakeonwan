@@ -1,6 +1,5 @@
 package hu.krafcsikgergo.wakeonwan.ui.screens
 
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,59 +9,63 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import hu.krafcsikgergo.wakeonwan.services.receiver.defaultKtorPort
+import hu.krafcsikgergo.wakeonwan.services.sender.KtorServerData
 import hu.krafcsikgergo.wakeonwan.ui.composables.IPTextField
 import hu.krafcsikgergo.wakeonwan.ui.composables.PortTextField
-import hu.krafcsikgergo.wakeonwan.ui.composables.topRow
-import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
-import hu.krafcsikgergo.wakeonwan.services.sender.KtorServerData
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import hu.krafcsikgergo.wakeonwan.ui.composables.isValidIPv4
+import hu.krafcsikgergo.wakeonwan.ui.composables.TopRow
 import org.koin.androidx.compose.koinViewModel
 
-// Legacy Status enum - keeping for compatibility with existing StatusChecker
-enum class Status {
-    LIVE, DEAD, UNKNOWN, LOADING
-}
-
-// Extension to convert new ServerStatus to legacy Status
-fun ServerStatus.toLegacyStatus(): Status = when (this) {
-    ServerStatus.LIVE -> Status.LIVE
-    ServerStatus.DEAD -> Status.DEAD
-    ServerStatus.UNKNOWN -> Status.UNKNOWN
-    ServerStatus.LOADING -> Status.LOADING
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SenderScreen(navigate: () -> Unit) {
-    val coroutineScope = rememberCoroutineScope()
+fun SenderScreen(navigateToReceiver: () -> Unit) {
     val context = LocalContext.current
     val viewModel = koinViewModel<SenderViewModel>()
     val uiState = viewModel.uiState
+
+    // Dialog state
+    var showAddServerDialog by remember { mutableStateOf(false) }
 
     // Show toast messages for operation results
     LaunchedEffect(uiState.lastOperationMessage) {
@@ -80,9 +83,11 @@ fun SenderScreen(navigate: () -> Unit) {
     }
 
     Column {
-        topRow(true) {
-            navigate()
-        }
+        TopRow(
+            title = "Sender",
+            switchToText = "Switch to Receiver",
+            onNavigate = navigateToReceiver
+        )
 
         Column(
             modifier = Modifier
@@ -91,157 +96,63 @@ fun SenderScreen(navigate: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // Receiver device settings
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Receiver device settings",
-                    fontSize = 22.sp,
-                    modifier = Modifier.padding(bottom = 20.dp)
-                )
-
-                IPTextField(ipAddress = uiState.selectedKtorServer.ipAddress) {
-                    viewModel.updateServerIpAddress(it)
-                }
-
-                PortTextField(
-                    port = uiState.selectedKtorServer.port.toString(),
-                    label = "Communication Port",
-                    modifier = Modifier
-                        .padding(all = 20.dp)
-                        .width(200.dp)
-                ) {
-                    viewModel.updateCommunicationPort(it)
-                }
-
-                // Save button
-                Button(
-                    modifier = Modifier
-                        .height(50.dp),
-                    onClick = {
-                        val newKtorServer = KtorServerData(
-                            ipAddress = uiState.selectedKtorServer.ipAddress,
-                            port = uiState.selectedKtorServer.port,
-                            name = "Saved at ${System.currentTimeMillis()}"
-                        )
-                        viewModel.saveNewKtorServer(newKtorServer)
-                    }) {
-                    Text("Save")
-                }
-            }
-
-            // Action buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 25.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                Button(
-                    modifier = Modifier.height(50.dp),
-                    enabled = !uiState.isWakeUpInProgress,
-                    onClick = {
-                        viewModel.wakeUpServer()
-                    }
-                ) {
-                    Text("Wake up Server")
-                }
-
-                Button(
-                    modifier = Modifier.height(50.dp),
-                    enabled = !uiState.isShutdownInProgress,
-                    onClick = {
-                        viewModel.shutdownServer()
-                    }
-                ) {
-                    Text("Shut down server")
-                }
-            }
-
-            // List of saved connections
-            SavedServersList(
+            // Server Selection Section
+            ServerSelectorSection(
+                selectedServer = uiState.selectedKtorServer,
                 servers = uiState.ktorServers,
-                onDeleteClick = { server ->
-                    viewModel.deleteKtorServer(server.id)
-                },
-                onItemClick = { server ->
+                onServerSelected = { server ->
                     viewModel.selectKtorServer(server.id)
+                },
+                onAddServerClick = {
+                    showAddServerDialog = true
+                },
+                onDeleteServer = { serverId ->
+                    viewModel.deleteKtorServer(serverId)
                 }
             )
 
-            // Status checkers
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Status title
-                Text(
-                    text = "Servers status",
-                    fontSize = 24.sp
-                )
+            // Action Buttons Section
+            ActionButtonsSection(
+                isWakeUpInProgress = uiState.isWakeUpInProgress,
+                isShutdownInProgress = uiState.isShutdownInProgress,
+                onWakeUpClick = { viewModel.wakeUpServer() },
+                onShutdownClick = { viewModel.shutdownServer() }
+            )
 
-                // Status check buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 25.dp),
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    StatusChecker(
-                        title = "Ktor server",
-                        isServerLive = uiState.ktorServerStatus.toLegacyStatus(),
-                        testServerStatus = { viewModel.testKtorServerStatus() }
-                    )
-                    StatusChecker(
-                        title = "Main server",
-                        isServerLive = uiState.serverStatus.toLegacyStatus(),
-                        testServerStatus = { viewModel.testServerStatus() }
-                    )
-                }
-            }
+            // Status Checkers Section
+            StatusCheckersSection(
+                ktorServerStatus = uiState.ktorServerStatus,
+                serverStatus = uiState.serverStatus,
+                onKtorStatusCheck = { viewModel.testKtorServerStatus() },
+                onServerStatusCheck = { viewModel.testServerStatus() }
+            )
         }
+    }
+
+    // Add Server Dialog
+    if (showAddServerDialog) {
+        AddServerDialog(
+            onDismiss = { showAddServerDialog = false },
+            onConfirm = { name, ipAddress, port ->
+                viewModel.addKtorServer(name, ipAddress, port)
+                showAddServerDialog = false
+            }
+        )
     }
 }
 
 @Composable
-fun StatusChecker(title: String, isServerLive: Status, testServerStatus: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(title, fontSize = 20.sp, modifier = Modifier.padding(bottom = 10.dp))
-        Button(
-            modifier = Modifier
-                .height(50.dp),
-            enabled = isServerLive != Status.LOADING,
-            onClick = {
-                testServerStatus()
-            }
-        ) {
-            Text("Test server status")
-
-        }
-        StatusIndicator(isServerLive)
-    }
-}
-
-@Composable
-fun StatusIndicator(isServerLive: Status) {
+fun StatusIndicator(isServerLive: ServerStatus) {
     val color = when (isServerLive) {
-        Status.LIVE -> Color.Green
-        Status.DEAD -> Color.Red
-        Status.LOADING -> Color.Yellow
+        ServerStatus.LIVE -> Color.Green
+        ServerStatus.DEAD -> Color.Red
+        ServerStatus.LOADING -> Color.Yellow
         else -> Color.Gray
     }
     val text = when (isServerLive) {
-        Status.LIVE -> "LIVE"
-        Status.DEAD -> "DEAD"
-        Status.LOADING -> "LOADING"
+        ServerStatus.LIVE -> "LIVE"
+        ServerStatus.DEAD -> "DEAD"
+        ServerStatus.LOADING -> "LOADING"
         else -> "UNKNOWN"
     }
 
@@ -252,10 +163,10 @@ fun StatusIndicator(isServerLive: Status) {
     ) {
         Icon(
             when (isServerLive) {
-                Status.LIVE -> Icons.Default.CheckCircle
-                Status.LOADING -> Icons.Default.Refresh
-                Status.DEAD -> Icons.Default.Warning
-                Status.UNKNOWN -> Icons.Default.Warning
+                ServerStatus.LIVE -> Icons.Default.CheckCircle
+                ServerStatus.LOADING -> Icons.Default.Refresh
+                ServerStatus.DEAD -> Icons.Default.Warning
+                ServerStatus.UNKNOWN -> Icons.Default.Warning
             }, contentDescription = "Status", tint = color
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -265,51 +176,459 @@ fun StatusIndicator(isServerLive: Status) {
 
 
 @Composable
-fun SavedServersList(
+fun ServerSelectorSection(
+    selectedServer: KtorServerData,
     servers: List<KtorServerData>,
-    onDeleteClick: (KtorServerData) -> Unit,
-    onItemClick: (KtorServerData) -> Unit
+    onServerSelected: (KtorServerData) -> Unit,
+    onAddServerClick: () -> Unit,
+    onDeleteServer: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var serverToDelete by remember { mutableStateOf<KtorServerData?>(null) }
+
+    // Calculate the available width (screen width - padding)
+    val screenWidth = LocalWindowInfo.current.containerSize.width.dp
+    val cardWidth = screenWidth - 40.dp // 20dp padding on each side
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Select Server",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedServer.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "${selectedServer.ipAddress}:${selectedServer.port}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Select server"
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.width(cardWidth)
+        ) {
+            servers.forEach { server ->
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = server.name,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "${server.ipAddress}:${server.port}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    serverToDelete = server
+                                    showDeleteConfirmDialog = true
+                                    expanded = false
+                                },
+                                modifier = Modifier.size(48.dp) // Even larger touch target
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete server",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(28.dp) // Much larger icon
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onServerSelected(server)
+                        expanded = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp) // More height for better spacing
+                )
+            }
+            if (servers.isNotEmpty()) {
+                androidx.compose.material3.HorizontalDivider()
+            }
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        "Add New Server",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add server",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                onClick = {
+                    onAddServerClick()
+                    expanded = false
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp) // Consistent height
+            )
+        }
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteConfirmDialog && serverToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirmDialog = false
+                serverToDelete = null
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete Server",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text("Delete Server")
+            },
+            text = {
+                Text("Are you sure you want to delete server '${serverToDelete?.name}'? This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        serverToDelete?.let { server ->
+                            onDeleteServer(server.id)
+                        }
+                        showDeleteConfirmDialog = false
+                        serverToDelete = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        serverToDelete = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun ActionButtonsSection(
+    isWakeUpInProgress: Boolean,
+    isShutdownInProgress: Boolean,
+    onWakeUpClick: () -> Unit,
+    onShutdownClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
-            .padding(top = 25.dp),
+            .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Saved servers",
-            fontSize = 24.sp
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Wake Up Button
+            ActionButton(
+                onClick = onWakeUpClick,
+                enabled = !isWakeUpInProgress,
+                icon = Icons.Default.PlayArrow,
+                text = "Wake Up",
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                isLoading = isWakeUpInProgress
+            )
 
-        LazyColumn {
-            servers.forEachIndexed { i, server ->
-                item {
-                    Row(
-                        modifier = Modifier
-                            .clickable { onItemClick(server) }
-                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 10.dp))
-                    {
-                        Text(
-                            text = "${i + 1}:",
-                            fontSize = 18.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = "${server.ipAddress}:${server.port}",
-                            fontSize = 18.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = "Delete",
-                            modifier = Modifier
-                                .clickable { onDeleteClick(server) }
-                                .padding(start = 8.dp)
-                        )
-                    }
-                }
+            // Shutdown Button
+            ActionButton(
+                onClick = onShutdownClick,
+                enabled = !isShutdownInProgress,
+                icon = Icons.Default.Close,
+                text = "Shutdown",
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                isLoading = isShutdownInProgress
+            )
+        }
+    }
+}
+
+@Composable
+fun ActionButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    icon: ImageVector,
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+    isLoading: Boolean = false
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        ),
+        modifier = Modifier
+            .height(72.dp)
+            .width(120.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = if (isLoading) Icons.Default.Refresh else icon,
+                contentDescription = text,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+@Composable
+fun StatusCheckersSection(
+    ktorServerStatus: ServerStatus,
+    serverStatus: ServerStatus,
+    onKtorStatusCheck: () -> Unit,
+    onServerStatusCheck: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            StatusChecker(
+                title = "Mobile App Server",
+                status = ktorServerStatus,
+                onCheck = onKtorStatusCheck,
+            )
+
+            StatusChecker(
+                title = "Target Server",
+                status = serverStatus,
+                onCheck = onServerStatusCheck,
+            )
+        }
+    }
+}
+
+@Composable
+fun StatusChecker(
+    title: String,
+    status: ServerStatus,
+    onCheck: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(180.dp)
+            .padding(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            StatusIndicator(isServerLive = status)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = onCheck,
+                enabled = status != ServerStatus.LOADING,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Check")
             }
         }
     }
+}
+
+@Composable
+fun AddServerDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, ipAddress: String, port: Int) -> Unit
+) {
+    var serverName by remember { mutableStateOf("") }
+    var ipAddress by remember { mutableStateOf("") }
+    var portString by remember { mutableStateOf(defaultKtorPort.toString()) }
+    var isError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Add Server"
+            )
+        },
+        title = {
+            Text("Add New Server")
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = serverName,
+                    onValueChange = {
+                        serverName = it
+                        isError = false
+                    },
+                    label = { Text("Server Name") },
+                    placeholder = { Text("e.g., Home PC") },
+                    singleLine = true,
+                    isError = isError && serverName.isBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Use the existing IPTextField component
+                IPTextField(
+                    ipAddress = ipAddress,
+                    onValueChange = {
+                        ipAddress = it
+                        isError = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Use the existing PortTextField component  
+                PortTextField(
+                    port = portString,
+                    label = "Port",
+                    modifier = Modifier.fillMaxWidth(),
+                    onValueChange = { newPortString ->
+                        portString = newPortString
+                        isError = false
+                    }
+                )
+
+                if (isError) {
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    // Validate inputs using the existing validation functions
+                    val portInt = portString.toIntOrNull()
+                    when {
+                        serverName.isBlank() -> {
+                            isError = true
+                            errorMessage = "Server name is required"
+                        }
+
+                        !isValidIPv4(ipAddress) -> {
+                            isError = true
+                            errorMessage = "Invalid IP address format"
+                        }
+
+                        portInt == null || portInt !in 1..65535 -> {
+                            isError = true
+                            errorMessage = "Invalid port number (1-65535)"
+                        }
+
+                        else -> {
+                            onConfirm(serverName, ipAddress, portInt)
+                        }
+                    }
+                }
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

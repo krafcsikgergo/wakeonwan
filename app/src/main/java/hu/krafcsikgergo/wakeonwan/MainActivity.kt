@@ -3,6 +3,7 @@ package hu.krafcsikgergo.wakeonwan
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +28,9 @@ class MainActivity : ComponentActivity(), KoinComponent {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Enable edge-to-edge display for modern Android status bar handling
+        enableEdgeToEdge()
+
         installSplashScreen()
 
         setContent {
@@ -44,7 +48,6 @@ class MainActivity : ComponentActivity(), KoinComponent {
 
 @Composable
 fun NavHost(
-    modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
     startDestination: String = NavigationItem.Sender.route,
 ) {
@@ -57,13 +60,12 @@ fun NavHost(
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             SenderScreen(
-                navigate = {
+                navigateToReceiver = {
                     navController.navigate(NavigationItem.Receiver.route) {
                         popUpTo(NavigationItem.Sender.route) {
                             inclusive = true
                         }
                     }
-
                 }
             )
         }
@@ -73,20 +75,15 @@ fun NavHost(
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             ReceiverScreen(
-                navigate = {
+                navigateToSender = {
                     navController.navigate(NavigationItem.Sender.route) {
                         popUpTo(NavigationItem.Receiver.route) {
                             inclusive = true
                         }
                     }
-
                 },
-                navigteToSchedules = {
-                    navController.navigate(NavigationItem.Schedules.route) {
-                        popUpTo(NavigationItem.Receiver.route) {
-                            inclusive = true
-                        }
-                    }
+                navigateToSchedules = {
+                    navController.navigate(NavigationItem.Schedules.route)
                 }
             )
         }
@@ -95,12 +92,8 @@ fun NavHost(
             NavigationItem.Schedules.route,
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            SchedulesScreen() {
-                navController.navigate(NavigationItem.Receiver.route) {
-                    popUpTo(NavigationItem.Schedules.route) {
-                        inclusive = true
-                    }
-                }
+            SchedulesScreen {
+                navController.popBackStack()
             }
         }
 

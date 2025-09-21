@@ -25,31 +25,27 @@ class SenderViewModel(
         private set
 
     init {
-        loadConfiguration()
-    }
+        viewModelScope.launch {
+            try {
+                val ktorServers = dataStoreManager.getKtorServers()
+                uiState = uiState.copy(
+                    ktorServers = ktorServers,
+                )
 
-    /**
-     * Updates the server IP address and saves it to configuration.
-     */
-    fun updateServerIpAddress(ipAddress: String) {
-        val newSelectedServer = uiState.selectedKtorServer.copy(ipAddress = ipAddress)
-        uiState = uiState.copy(selectedKtorServer = newSelectedServer)
-    }
-
-    /**
-     * Updates the communication port and saves it to configuration.
-     */
-    fun updateCommunicationPort(port: Int) {
-        val newSelectedServer = uiState.selectedKtorServer.copy(port = port)
-        uiState = uiState.copy(selectedKtorServer = newSelectedServer)
+                // set selected if ktorServers is not empty
+                if (ktorServers.isNotEmpty()) {
+                    selectKtorServer(ktorServers[0].id)
+                }
+            } catch (e: Exception) {
+                updateErrorState("Failed to load configuration: ${e.message}")
+            }
+        }
     }
 
     /**
      * Tests the Ktor server health status.
      */
     fun testKtorServerStatus() {
-        if (!isConfigurationValid()) return
-
         uiState = uiState.copy(ktorServerStatus = ServerStatus.LOADING)
         viewModelScope.launch {
             try {
@@ -72,8 +68,6 @@ class SenderViewModel(
      * Tests the server status endpoint.
      */
     fun testServerStatus() {
-        if (!isConfigurationValid()) return
-
         uiState = uiState.copy(serverStatus = ServerStatus.LOADING)
         viewModelScope.launch {
             try {
@@ -96,8 +90,6 @@ class SenderViewModel(
      * Sends a wake-up request to the remote server.
      */
     fun wakeUpServer() {
-        if (!isConfigurationValid()) return
-
         uiState = uiState.copy(isWakeUpInProgress = true, errorMessage = null)
         viewModelScope.launch {
             try {
@@ -131,8 +123,6 @@ class SenderViewModel(
      * Sends a shutdown request to the remote server.
      */
     fun shutdownServer() {
-        if (!isConfigurationValid()) return
-
         uiState = uiState.copy(isShutdownInProgress = true, errorMessage = null)
         viewModelScope.launch {
             try {
@@ -184,12 +174,26 @@ class SenderViewModel(
         }
     }
 
+    /**
+     * Adds a new Ktor server with individual parameters.
+     */
+    fun addKtorServer(name: String, ipAddress: String, port: Int) {
+        val newServer = KtorServerData(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            ipAddress = ipAddress,
+            port = port
+        )
+        saveNewKtorServer(newServer)
+    }
+
     fun deleteKtorServer(serverId: String) {
         viewModelScope.launch {
             try {
                 dataStoreManager.removeKtorServer(serverId)
                 val updatedServers = dataStoreManager.getKtorServers()
-                val newSelectedServer = if (updatedServers.isNotEmpty()) updatedServers[0] else SenderUiState().selectedKtorServer
+                val newSelectedServer =
+                    if (updatedServers.isNotEmpty()) updatedServers[0] else SenderUiState().selectedKtorServer
                 uiState = uiState.copy(
                     ktorServers = updatedServers,
                     selectedKtorServer = newSelectedServer
@@ -203,23 +207,10 @@ class SenderViewModel(
     fun selectKtorServer(serverId: String) {
         val selectedServer = uiState.ktorServers.find { it.id == serverId } ?: return
         uiState = uiState.copy(selectedKtorServer = selectedServer)
-    }
 
-    /**
-     * Loads the initial configuration from DataStore.
-     */
-    private fun loadConfiguration() {
-        viewModelScope.launch {
-            try {
-                val ktorServers = dataStoreManager.getKtorServers()
-                uiState = uiState.copy(
-                    ktorServers = ktorServers,
-                    selectedKtorServer = if (ktorServers.isNotEmpty()) ktorServers[0] else SenderUiState().selectedKtorServer,
-                )
-            } catch (e: Exception) {
-                updateErrorState("Failed to load configuration: ${e.message}")
-            }
-        }
+        // Run status tests for the newly selected server
+        testKtorServerStatus()
+        testServerStatus()
     }
 
     /**
@@ -232,28 +223,10 @@ class SenderViewModel(
     }
 
     /**
-     * Validates if the current configuration is valid for network operations.
-     */
-    private fun isConfigurationValid(): Boolean {
-        val selectedServer = uiState.selectedKtorServer
-        val isValid = selectedServer?.ipAddress?.isNotBlank() == true && selectedServer.port > 0
-        if (!isValid) {
-            updateErrorState("Invalid configuration: Please check IP address and port")
-        }
-        return isValid
-    }
-
-    /**
      * Updates the UI state with an error message.
      */
     private fun updateErrorState(message: String) {
         uiState = uiState.copy(errorMessage = message)
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        // Clean up network resources
-        networkRepository.close()
     }
 }
 
