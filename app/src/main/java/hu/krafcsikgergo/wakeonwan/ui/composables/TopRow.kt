@@ -28,7 +28,7 @@ fun TopRow(
         modifier = Modifier
             .height(100.dp)
             .fillMaxWidth()
-            .padding(20.dp),
+            .padding(top = 32.dp, bottom = 8.dp, start = 20.dp, end = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

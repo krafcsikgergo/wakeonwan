@@ -7,10 +7,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
@@ -27,13 +29,12 @@ class MainActivity : ComponentActivity(), KoinComponent {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Enable edge-to-edge display for modern Android status bar handling
         enableEdgeToEdge()
-
         installSplashScreen()
 
         setContent {
+            // Remove when https://issuetracker.google.com/issues/364713509 is fixed
+            LaunchedEffect(isSystemInDarkTheme()) { enableEdgeToEdge() }
             WakeOnWANTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
