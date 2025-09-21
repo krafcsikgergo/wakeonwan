@@ -1,4 +1,4 @@
-package hu.krafcsikgergo.wakeonwan.services
+package hu.krafcsikgergo.wakeonwan.services.receiver
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -6,11 +6,18 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import hu.krafcsikgergo.wakeonwan.services.AlarmReceiver
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoField
 
-object ScheduleManager {
-    fun scheduleAlarms(context: Context, schedules: List<Schedule>) {
+interface ScheduleManager {
+    fun scheduleAlarms(context: Context, schedules: List<Schedule>)
+    fun scheduleExactAlarm(context: Context, alarmTime: Long, pendingIntent: PendingIntent)
+    fun calculateNextAlarmTime(schedule: Schedule): Long?
+}
+
+class ScheduleManagerImpl : ScheduleManager {
+    override fun scheduleAlarms(context: Context, schedules: List<Schedule>) {
         Log.d("ScheduleManager", "Scheduling alarms")
         schedules.forEach { schedule ->
             Log.d(
@@ -35,7 +42,7 @@ object ScheduleManager {
         }
     }
 
-    fun scheduleExactAlarm(context: Context, alarmTime: Long, pendingIntent: PendingIntent) {
+    override fun scheduleExactAlarm(context: Context, alarmTime: Long, pendingIntent: PendingIntent) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
         // Cancel the existing alarm if it exists
@@ -61,13 +68,7 @@ object ScheduleManager {
         }
     }
 
-    /**
-     * Calculates the next alarm time based on a Schedule.
-     *
-     * @param schedule The schedule to calculate the next alarm time for.
-     * @return The epoch milli time for the next alarm, or null if it cannot be calculated.
-     */
-    fun calculateNextAlarmTime(schedule: Schedule): Long? {
+    override fun calculateNextAlarmTime(schedule: Schedule): Long? {
         val now = ZonedDateTime.now()
 
         // Get the current day of week (1 = Monday, 7 = Sunday)
@@ -79,7 +80,8 @@ object ScheduleManager {
             if (schedule.days[nextDayIndex]) {
                 // Found the next day to schedule
                 var nextAlarm = now.with(ChronoField.DAY_OF_WEEK, ((nextDayIndex + 1) % 7).toLong())
-                nextAlarm = nextAlarm.withHour(schedule.time.hour).withMinute(schedule.time.minute)
+                // convert epoch millis to LocalTime
+                nextAlarm = nextAlarm.withHour(schedule.timeInLocalTime.hour).withMinute(schedule.timeInLocalTime.minute)
                     .withSecond(0).withNano(0)
 
                 // If the calculated next alarm is before the current time, it means the alarm time for today has passed.
@@ -94,6 +96,4 @@ object ScheduleManager {
         // If we've found no suitable day (which should be impossible in practical scenarios), return null
         return null
     }
-
-
 }

@@ -1,33 +1,34 @@
-package hu.krafcsikgergo.wakeonwan.services
+package hu.krafcsikgergo.wakeonwan.services.receiver
 
-import android.content.Context
 import android.util.Log
-import com.jcraft.jsch.Channel
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.JSch
-import com.jcraft.jsch.Session
-import io.ktor.utils.io.errors.IOException
-import java.io.BufferedReader
-import java.io.File
-import java.io.FileInputStream
-import java.io.InputStream
-import java.io.InputStreamReader
+import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 
+interface SSHManager {
+    suspend fun executeCommand(command: String): Boolean
+}
 
-class SSHManager(
-    private val username: String,
-    private val ipAddress: String,
-    private val port: Int?,
-    private val password: String
-) {
+class SSHManagerImpl(
+    private val dataStoreManager: DataStoreManager
+) : SSHManager {
 
-    fun executeCommand(command: String): Boolean {
+    private suspend fun getServerData(): ServerData {
+        val serverData =
+            dataStoreManager.getServerData() ?: throw IllegalStateException("Server data not found")
+        return serverData
+    }
+
+    override suspend fun executeCommand(command: String): Boolean {
+        val serverData = getServerData()
+
         val jsch = JSch()
 
         try {
             // Create SSH session
-            val session = jsch.getSession(username, ipAddress, port ?: 22)
-            session.setPassword(password)
+            val session =
+                jsch.getSession(serverData.username, serverData.ipAddress, serverData.sshPort)
+            session.setPassword(serverData.password)
             session.setConfig("StrictHostKeyChecking", "no")
             session.connect()
 

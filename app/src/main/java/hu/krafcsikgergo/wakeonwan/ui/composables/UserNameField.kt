@@ -1,4 +1,4 @@
-package hu.krafcsikgergo.wakeonwan.composables
+package hu.krafcsikgergo.wakeonwan.ui.composables
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.fillMaxWidth

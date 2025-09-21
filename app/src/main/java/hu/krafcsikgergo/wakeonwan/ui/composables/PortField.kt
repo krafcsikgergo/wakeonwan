@@ -1,4 +1,4 @@
-package hu.krafcsikgergo.wakeonwan.composables
+package hu.krafcsikgergo.wakeonwan.ui.composables
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width

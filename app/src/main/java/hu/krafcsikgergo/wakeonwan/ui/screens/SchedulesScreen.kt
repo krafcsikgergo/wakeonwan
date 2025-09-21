@@ -1,8 +1,6 @@
-package hu.krafcsikgergo.wakeonwan
-
+package hu.krafcsikgergo.wakeonwan.ui.screens
 
 import android.app.TimePickerDialog
-import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -14,79 +12,42 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.gson.Gson
-import hu.krafcsikgergo.wakeonwan.services.ApiImplementation
-import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
-import hu.krafcsikgergo.wakeonwan.services.NetworkManager
-import hu.krafcsikgergo.wakeonwan.services.Schedule
-import hu.krafcsikgergo.wakeonwan.services.ScheduleManager
-import kotlinx.coroutines.launch
+import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
+import org.koin.androidx.compose.koinViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-
 @Composable
 fun SchedulesScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val viewModel = koinViewModel<SchedulesViewModel>()
+    val uiState = viewModel.uiState
+
+    // Local form state
     var turnOn by remember { mutableStateOf(false) }
     var allDaysSelected by remember { mutableStateOf(false) }
     val daysOfWeek = remember { List(7) { mutableStateOf(false) } }
-    var time by remember { mutableStateOf(LocalTime.of(0, 0)) }
-    val schedules = remember { mutableStateListOf<Schedule>() }
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val gson = Gson()
+    var selectedTime by remember { mutableStateOf(LocalTime.of(0, 0)) }
 
-    fun getSchedules() {
-        coroutineScope.launch {
-            // Load schedules from DataStore
-            val schedulesDataString = DataStoreManager.getInstance(context).getString("schedules")
-            if (schedulesDataString == null || schedulesDataString.isEmpty()) {
-                return@launch
-            }
-
-            // Convert the schedules data string to a list of Schedule objects
-            val schedulesData: List<Schedule> =
-                gson.fromJson(schedulesDataString, Array<Schedule>::class.java).toList()
-
-            // Update the schedules list
-            schedules.clear()
-            schedules.addAll(schedulesData)
+    // Handle toast messages
+    uiState.lastOperationMessage?.let { message ->
+        LaunchedEffect(message) {
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearOperationMessage()
         }
     }
 
-    fun saveSchedule(newSchedule: Schedule) {
-        // Add new schedule to the list of schedules
-        schedules.add(newSchedule)
-
-        // Convert the list of Schedule objects to a JSON string
-        val newSchedulesDataString = gson.toJson(schedules)
-
-        // Save the new schedules data string to the DataStore
-        coroutineScope.launch {
-            DataStoreManager.getInstance(context).writeString("schedules", newSchedulesDataString)
-        }
-
-        // Reset schedules runs
-        ScheduleManager.scheduleAlarms(context, schedules)
-    }
-
-    fun deleteSchedule(schedule: Schedule) {
-        // Remove the schedule from the list of schedules
-        schedules.remove(schedule)
-
-        // Convert the list of Schedule objects to a JSON string
-        val newSchedulesDataString = gson.toJson(schedules)
-
-        // Save the new schedules data string to the DataStore
-        coroutineScope.launch {
-            DataStoreManager.getInstance(context).writeString("schedules", newSchedulesDataString)
+    // Handle error messages
+    uiState.errorMessage?.let { message ->
+        LaunchedEffect(message) {
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
         }
     }
 
-    // Load schedules from API
+    // Load schedules when screen first loads
     LaunchedEffect(Unit) {
-        // Get schedules
-        getSchedules()
+        viewModel.loadSchedules()
     }
 
     Column(
@@ -111,7 +72,10 @@ fun SchedulesScreen(onBack: () -> Unit) {
                     .padding(end = 16.dp)
             )
             Text("On", modifier = Modifier.padding(end = 8.dp))
-            Switch(checked = turnOn, onCheckedChange = { turnOn = it })
+            Switch(
+                checked = turnOn,
+                onCheckedChange = { turnOn = it }
+            )
             Text("Off", modifier = Modifier.padding(start = 8.dp))
         }
 
@@ -128,7 +92,6 @@ fun SchedulesScreen(onBack: () -> Unit) {
             Text("Select All")
         }
 
-
         // Day Checkboxes
         Row(
             modifier = Modifier
@@ -143,26 +106,33 @@ fun SchedulesScreen(onBack: () -> Unit) {
                     onCheckedChange = { checked ->
                         daysOfWeek[index].value = checked
                         allDaysSelected = daysOfWeek.all { it.value }
-                    })
+                    }
+                )
             }
         }
 
         // Time Picker
-        TimePicker(time) { newTime -> time = newTime }
+        TimePicker(selectedTime) { newTime -> 
+            selectedTime = newTime
+        }
 
         Spacer(modifier = Modifier.height(18.dp))
 
         // Save Button
-        Button(modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            enabled = !uiState.isLoading,
             onClick = {
-                val randomId = (0..100000).random()
-                val newSchedule = Schedule(randomId, time, turnOn, daysOfWeek.map { it.value })
-                saveSchedule(newSchedule)
-                Toast.makeText(context, "Schedule saved", Toast.LENGTH_SHORT).show()
-            }) {
-            Text("Save")
+                viewModel.createSchedule(
+                    time = selectedTime,
+                    turnOn = turnOn,
+                    days = daysOfWeek.map { it.value }
+                )
+            }
+        ) {
+            Text(if (uiState.isLoading) "Saving..." else "Save")
         }
 
         Spacer(modifier = Modifier.height(18.dp))
@@ -177,7 +147,7 @@ fun SchedulesScreen(onBack: () -> Unit) {
             textAlign = TextAlign.Center
         )
 
-        if (schedules.isEmpty()) {
+        if (uiState.schedules.isEmpty()) {
             Text(
                 "No schedules yet",
                 modifier = Modifier.fillMaxWidth(),
@@ -186,11 +156,13 @@ fun SchedulesScreen(onBack: () -> Unit) {
         }
 
         // List of Schedules
-        schedules.forEachIndexed { index, schedule ->
-            ScheduleItem(schedule, onDelete = {
-                deleteSchedule(schedule)
-                Toast.makeText(context, "Schedule deleted", Toast.LENGTH_SHORT).show()
-            })
+        uiState.schedules.forEach { schedule ->
+            ScheduleItem(
+                schedule = schedule,
+                onDelete = {
+                    viewModel.deleteSchedule(schedule.id)
+                }
+            )
         }
 
         // Back Button
@@ -264,7 +236,7 @@ fun ScheduleItem(schedule: Schedule, onDelete: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "${if (schedule.turnOn) "On" else "Off"} - ${
-                schedule.time.format(
+                schedule.timeInLocalTime.format(
                     DateTimeFormatter.ofPattern(
                         "HH:mm"
                     )

@@ -8,7 +8,6 @@ import android.util.Log
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         val turnOn = intent?.getBooleanExtra("turnOn", true) ?: true
-        // Execute your function based on the turnOn parameter
         if (turnOn) {
             // Trigger the 'turn on' action
             Log.d("AlarmReceiver", "Turn on")

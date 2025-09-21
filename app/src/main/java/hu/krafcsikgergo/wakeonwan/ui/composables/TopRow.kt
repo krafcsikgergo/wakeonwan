@@ -1,4 +1,4 @@
-package hu.krafcsikgergo.wakeonwan.composables
+package hu.krafcsikgergo.wakeonwan.ui.composables
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row

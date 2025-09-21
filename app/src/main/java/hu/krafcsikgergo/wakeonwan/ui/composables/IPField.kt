@@ -1,7 +1,9 @@
-package hu.krafcsikgergo.wakeonwan.composables
+package hu.krafcsikgergo.wakeonwan.ui.composables
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -15,30 +17,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MacAddressTextField(macAddress: String, onValueChange: (String) -> Unit) {
+fun IPTextField(ipAddress: String, onValueChange: (String) -> Unit) {
 
     var isError by remember { mutableStateOf(false) }
 
     TextField(
         modifier = Modifier
-            .padding(all = 20.dp)
             .width(200.dp),
-        value = macAddress,
-        label = { Text("MAC address") },
-        keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Password),
+        value = ipAddress,
+        label = { Text("IP address") },
+        keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
         isError = isError,
         onValueChange = {
-            isError = !isValidMacAddress(it)
+            isError = !isValidIPv4(it)
             onValueChange(it)
         }
-
     )
 }
 
-fun isValidMacAddress(mac: String): Boolean {
-    val macRegex = "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$".toRegex()
-    return mac.matches(macRegex)
+fun isValidIPv4(ip: String): Boolean {
+    val parts = ip.split(".")
+    if (parts.size != 4) return false
+
+    for (part in parts) {
+        val num = part.toIntOrNull()
+        if (num == null || num < 0 || num > 255) {
+            return false
+        }
+    }
+
+    return true
 }
