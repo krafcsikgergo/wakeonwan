@@ -22,12 +22,10 @@ data class ServerData(
 @Serializable
 data class Schedule(
     val id: Int = (0..Int.MAX_VALUE).random(),
-    val time: Long, // epoch millis
+    val time: Long, // seconds since midnight (0-86399)
     val turnOn: Boolean,
-    val days: List<Boolean> // Represents days from Monday to Sunday
-
-    // getter for local time
+    val days: List<Boolean> // Represents days from Monday to Sunday (index 0 = Monday)
 ) {
     val timeInLocalTime: LocalTime
-        get() = LocalTime.ofSecondOfDay(time / 1000 % 86400)
+        get() = LocalTime.ofSecondOfDay(time)
 }

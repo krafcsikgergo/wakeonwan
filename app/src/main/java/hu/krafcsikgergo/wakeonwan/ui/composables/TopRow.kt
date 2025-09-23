@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,7 +23,8 @@ import androidx.compose.ui.unit.sp
 fun TopRow(
     title: String,
     switchToText: String,
-    onNavigate: () -> Unit
+    onNavigate: () -> Unit,
+    icon: ImageVector = Icons.Default.SwapHoriz
 ) {
     Row(
         modifier = Modifier
@@ -44,7 +46,7 @@ fun TopRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.SwapHoriz,
+                imageVector = icon,
                 contentDescription = "Switch to $switchToText",
                 modifier = Modifier.size(20.dp)
             )

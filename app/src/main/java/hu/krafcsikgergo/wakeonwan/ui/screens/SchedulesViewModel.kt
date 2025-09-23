@@ -1,5 +1,6 @@
 package hu.krafcsikgergo.wakeonwan.ui.screens
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -7,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
+import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 
@@ -15,7 +17,9 @@ import java.time.LocalTime
  * Handles creation, editing, and deletion of wake/sleep schedules.
  */
 class SchedulesViewModel(
-    private val dataStoreManager: DataStoreManager
+    private val dataStoreManager: DataStoreManager,
+    private val scheduleManager: ScheduleManager,
+    private val context: Context
 ) : ViewModel() {
 
     // UI State
@@ -55,27 +59,46 @@ class SchedulesViewModel(
         turnOn: Boolean,
         days: List<Boolean>
     ) {
-        val epochMillis = time.toSecondOfDay() * 1000L
+        // Validation
+        if (days.none { it }) {
+            uiState = uiState.copy(errorMessage = "Please select at least one day")
+            return
+        }
+        
+        if (days.size != 7) {
+            uiState = uiState.copy(errorMessage = "Days list must contain exactly 7 elements")
+            return
+        }
+
+        val timeInSeconds = time.toSecondOfDay().toLong()
         viewModelScope.launch {
             try {
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+                
                 val newId = generateNewScheduleId()
                 val newSchedule = Schedule(
                     id = newId,
-                    time = epochMillis,
+                    time = timeInSeconds,
                     turnOn = turnOn,
                     days = days
                 )
 
+                // Save to DataStore first - if this fails, don't schedule alarms
                 dataStoreManager.saveSchedule(newSchedule)
+                
+                // Only schedule alarms if save was successful
+                scheduleManager.scheduleAlarms(context, listOf(newSchedule))
 
                 // Update local state
                 uiState = uiState.copy(
                     schedules = uiState.schedules + newSchedule,
-                    lastOperationMessage = "Schedule created successfully",
-                    errorMessage = null
+                    lastOperationMessage = "Schedule created and alarm set successfully",
+                    errorMessage = null,
+                    isLoading = false
                 )
             } catch (e: Exception) {
                 uiState = uiState.copy(
+                    isLoading = false,
                     errorMessage = "Failed to create schedule: ${e.message}"
                 )
             }
@@ -91,18 +114,22 @@ class SchedulesViewModel(
         turnOn: Boolean,
         days: List<Boolean>
     ) {
-        val epochMillis = time.toSecondOfDay() * 1000L
+        val timeInSeconds = time.toSecondOfDay().toLong()
         viewModelScope.launch {
             try {
                 val updatedSchedule = Schedule(
                     id = scheduleId,
-                    time = epochMillis,
+                    time = timeInSeconds,
                     turnOn = turnOn,
                     days = days
                 )
 
                 dataStoreManager.removeSchedule(scheduleId)
                 dataStoreManager.saveSchedule(updatedSchedule)
+                
+                // Cancel old alarm and schedule new one
+                scheduleManager.cancelAlarm(context, scheduleId)
+                scheduleManager.scheduleAlarms(context, listOf(updatedSchedule))
 
                 // Update local state
                 uiState = uiState.copy(
@@ -127,11 +154,14 @@ class SchedulesViewModel(
         viewModelScope.launch {
             try {
                 dataStoreManager.removeSchedule(scheduleId)
+                
+                // Cancel the alarm
+                scheduleManager.cancelAlarm(context, scheduleId)
 
                 // Update local state
                 uiState = uiState.copy(
                     schedules = uiState.schedules.filter { it.id != scheduleId },
-                    lastOperationMessage = "Schedule deleted successfully",
+                    lastOperationMessage = "Schedule deleted and alarm cancelled successfully",
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -198,9 +228,19 @@ class SchedulesViewModel(
 
     /**
      * Generates a new unique ID for a schedule.
+     * Uses current timestamp to avoid collisions and ensure uniqueness.
      */
     private fun generateNewScheduleId(): Int {
-        return (uiState.schedules.maxOfOrNull { it.id } ?: 0) + 1
+        val existingIds = uiState.schedules.map { it.id }.toSet()
+        val baseId = (uiState.schedules.maxOfOrNull { it.id } ?: 0) + 1
+        
+        // Ensure we don't have ID collisions and stay within safe bounds
+        var newId = baseId
+        while (existingIds.contains(newId) || newId > 100000) { // Keep IDs reasonable to avoid overflow
+            newId = (1..100000).random()
+        }
+        
+        return newId
     }
 }
 

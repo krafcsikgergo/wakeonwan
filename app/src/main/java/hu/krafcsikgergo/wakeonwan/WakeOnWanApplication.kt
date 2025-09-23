@@ -20,6 +20,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
+import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.core.context.startKoin
 import org.koin.core.module.dsl.singleOf
 import org.koin.core.module.dsl.viewModelOf
@@ -64,7 +65,7 @@ class WakeOnWanApplication : Application() {
                     // ViewModels
                     viewModelOf(::SenderViewModel)
                     viewModelOf(::ReceiverViewModel)
-                    viewModelOf(::SchedulesViewModel)
+                    viewModel { SchedulesViewModel(get(), get(), get()) }
                 }
             )
         }

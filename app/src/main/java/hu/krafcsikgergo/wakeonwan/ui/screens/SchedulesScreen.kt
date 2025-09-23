@@ -2,17 +2,30 @@ package hu.krafcsikgergo.wakeonwan.ui.screens
 
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PowerOff
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
+import hu.krafcsikgergo.wakeonwan.ui.composables.TopRow
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -23,11 +36,8 @@ fun SchedulesScreen(onBack: () -> Unit) {
     val viewModel = koinViewModel<SchedulesViewModel>()
     val uiState = viewModel.uiState
 
-    // Local form state
-    var turnOn by remember { mutableStateOf(false) }
-    var allDaysSelected by remember { mutableStateOf(false) }
-    val daysOfWeek = remember { List(7) { mutableStateOf(false) } }
-    var selectedTime by remember { mutableStateOf(LocalTime.of(0, 0)) }
+    // Dialog state
+    var showAddScheduleDialog by remember { mutableStateOf(false) }
 
     // Handle toast messages
     uiState.lastOperationMessage?.let { message ->
@@ -50,214 +60,451 @@ fun SchedulesScreen(onBack: () -> Unit) {
         viewModel.loadSchedules()
     }
 
-    Column(
-        modifier = Modifier
-            .padding(24.dp)
-            .fillMaxWidth()
-    ) {
-        // Create a new schedule title
-        Text(
-            "Create a new schedule",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier
-                .padding(bottom = 24.dp)
-                .fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-
-        // Switch for Turn On/Off
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Turn", modifier = Modifier
-                    .padding(end = 16.dp)
+    Scaffold(
+        topBar = {
+            TopRow(
+                title = "Schedules",
+                switchToText = "Go back",
+                onNavigate = onBack,
+                icon = Icons.Default.ArrowBack
             )
-            Text("On", modifier = Modifier.padding(end = 8.dp))
-            Switch(
-                checked = turnOn,
-                onCheckedChange = { turnOn = it }
-            )
-            Text("Off", modifier = Modifier.padding(start = 8.dp))
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddScheduleDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Schedule",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
         }
-
-        // Select All Checkbox
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = allDaysSelected,
-                onCheckedChange = { isChecked ->
-                    allDaysSelected = isChecked
-                    daysOfWeek.forEach { it.value = isChecked }
-                },
-                modifier = Modifier.padding(start = 0.dp)
-            )
-            Text("Select All")
-        }
-
-        // Day Checkboxes
-        Row(
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 20.dp)
         ) {
-            listOf("M", "T", "W", "T", "F", "S", "S").forEachIndexed { index, label ->
-                CheckboxWithLabel(
-                    label = label,
-                    checked = daysOfWeek[index].value,
-                    onCheckedChange = { checked ->
-                        daysOfWeek[index].value = checked
-                        allDaysSelected = daysOfWeek.all { it.value }
+            if (uiState.schedules.isEmpty()) {
+                EmptySchedulesState()
+            } else {
+                SchedulesList(
+                    schedules = uiState.schedules,
+                    onDeleteSchedule = { schedule ->
+                        viewModel.deleteSchedule(schedule.id)
                     }
                 )
             }
         }
+    }
 
-        // Time Picker
-        TimePicker(selectedTime) { newTime -> 
-            selectedTime = newTime
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Save Button
-        Button(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            enabled = !uiState.isLoading,
-            onClick = {
+    // Add Schedule Dialog
+    if (showAddScheduleDialog) {
+        AddScheduleDialog(
+            onDismiss = { showAddScheduleDialog = false },
+            onConfirm = { time, turnOn, days ->
                 viewModel.createSchedule(
-                    time = selectedTime,
+                    time = time,
                     turnOn = turnOn,
-                    days = daysOfWeek.map { it.value }
+                    days = days
                 )
+                showAddScheduleDialog = false
             }
-        ) {
-            Text(if (uiState.isLoading) "Saving..." else "Save")
-        }
+        )
+    }
+}
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Schedules List title
+@Composable
+fun EmptySchedulesState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.Schedule,
+            contentDescription = "No schedules",
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "Schedules",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier
-                .padding(bottom = 24.dp)
-                .fillMaxWidth(),
+            text = "No schedules yet",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Tap the + button to create your first schedule",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
 
-        if (uiState.schedules.isEmpty()) {
-            Text(
-                "No schedules yet",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-        }
-
-        // List of Schedules
-        uiState.schedules.forEach { schedule ->
-            ScheduleItem(
+@Composable
+fun SchedulesList(
+    schedules: List<Schedule>,
+    onDeleteSchedule: (Schedule) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(vertical = 16.dp)
+    ) {
+        items(schedules) { schedule ->
+            ScheduleCard(
                 schedule = schedule,
-                onDelete = {
-                    viewModel.deleteSchedule(schedule.id)
-                }
+                onDelete = { onDeleteSchedule(schedule) }
             )
         }
+    }
+}
 
-        // Back Button
-        Button(
-            onClick = onBack,
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScheduleCard(
+    schedule: Schedule,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Back")
+            // Action Icon (Wake/Sleep)
+            Card(
+                modifier = Modifier.size(48.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (schedule.turnOn) 
+                        MaterialTheme.colorScheme.primaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.errorContainer
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (schedule.turnOn) Icons.Default.PowerSettingsNew else Icons.Default.PowerOff,
+                        contentDescription = if (schedule.turnOn) "Wake Up" else "Shutdown",
+                        tint = if (schedule.turnOn) 
+                            MaterialTheme.colorScheme.onPrimaryContainer 
+                        else 
+                            MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Schedule Details
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // Time
+                Text(
+                    text = schedule.timeInLocalTime.format(DateTimeFormatter.ofPattern("HH:mm")),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Action Label
+                Text(
+                    text = if (schedule.turnOn) "Wake Up" else "Shutdown",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (schedule.turnOn) 
+                        MaterialTheme.colorScheme.primary 
+                    else 
+                        MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Days Row
+                DaysRow(selectedDays = schedule.days)
+            }
+
+            // Delete Button
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete Schedule",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }
 
 @Composable
-fun CheckboxWithLabel(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(label)
-    }
-}
-
-@Composable
-fun TimePicker(selectedTime: LocalTime, onTimeSelected: (LocalTime) -> Unit) {
-    val context = LocalContext.current
-    var showDialog by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+fun DaysRow(selectedDays: List<Boolean>) {
+    val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
+    
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            "Time: ${selectedTime.format(DateTimeFormatter.ofPattern("HH:mm"))}",
-            modifier = Modifier.padding(end = 16.dp),
-            fontSize = 24.sp
-        )
-
-        // Display a button that shows the selected time and opens the time picker dialog when clicked
-        Button(onClick = { showDialog = true }) {
-            Text("Change Time")
+        itemsIndexed(dayLabels) { index, label ->
+            DayChip(
+                label = label,
+                isSelected = index < selectedDays.size && selectedDays[index]
+            )
         }
     }
+}
 
-    // When showDialog is true, show the time picker dialog
-    if (showDialog) {
-        // Dismiss the dialog once the time is selected or cancelled
-        val onDismissRequest = { showDialog = false }
+@Composable
+fun DayChip(
+    label: String,
+    isSelected: Boolean
+) {
+    Surface(
+        modifier = Modifier.size(32.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) 
+            MaterialTheme.colorScheme.primary 
+        else 
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isSelected) 
+                    MaterialTheme.colorScheme.onPrimary 
+                else 
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+}
 
-        // Initialize the time picker dialog
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddScheduleDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (time: LocalTime, turnOn: Boolean, days: List<Boolean>) -> Unit
+) {
+    var selectedTime by remember { mutableStateOf(LocalTime.of(7, 0)) }
+    var turnOn by remember { mutableStateOf(true) }
+    val selectedDays = remember { List(7) { mutableStateOf(false) } }
+    var showTimePicker by remember { mutableStateOf(false) }
+    
+    val context = LocalContext.current
+    
+    // Validation
+    val isValid = selectedDays.any { it.value }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.Schedule,
+                contentDescription = "Add Schedule",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                "Add New Schedule",
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                // Action Toggle Section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            "Action",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (turnOn) Icons.Default.PowerSettingsNew else Icons.Default.PowerOff,
+                                    contentDescription = null,
+                                    tint = if (turnOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    if (turnOn) "Wake Up" else "Shutdown",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (turnOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Switch(
+                                checked = turnOn,
+                                onCheckedChange = { turnOn = it }
+                            )
+                        }
+                    }
+                }
+
+                // Time Selection Section
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    onClick = { showTimePicker = true }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            "Time",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            selectedTime.format(DateTimeFormatter.ofPattern("HH:mm")),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Days Selection Section
+                Column {
+                    Text(
+                        "Days of Week",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DaySelectionRow(selectedDays = selectedDays)
+                    
+                    if (!isValid) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Please select at least one day",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        selectedTime,
+                        turnOn,
+                        selectedDays.map { it.value }
+                    )
+                },
+                enabled = isValid
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+
+    // Time Picker Dialog
+    if (showTimePicker) {
         val timePickerDialog = TimePickerDialog(
             context,
             { _, hourOfDay, minute ->
-                onTimeSelected(LocalTime.of(hourOfDay, minute))
-                onDismissRequest()
+                selectedTime = LocalTime.of(hourOfDay, minute)
+                showTimePicker = false
             },
             selectedTime.hour,
             selectedTime.minute,
-            true // is24HourView
+            true
         )
-
-        timePickerDialog.setOnCancelListener { onDismissRequest() }
-        timePickerDialog.setOnDismissListener { onDismissRequest() }
-
-        // Show the dialog
-        timePickerDialog.show()
+        
+        timePickerDialog.setOnCancelListener { showTimePicker = false }
+        timePickerDialog.setOnDismissListener { showTimePicker = false }
+        
+        DisposableEffect(Unit) {
+            timePickerDialog.show()
+            onDispose {
+                timePickerDialog.dismiss()
+            }
+        }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScheduleItem(schedule: Schedule, onDelete: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "${if (schedule.turnOn) "On" else "Off"} - ${
-                schedule.timeInLocalTime.format(
-                    DateTimeFormatter.ofPattern(
-                        "HH:mm"
+fun DaySelectionRow(selectedDays: List<MutableState<Boolean>>) {
+    val dayLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        itemsIndexed(dayLabels) { index, label ->
+            FilterChip(
+                onClick = { selectedDays[index].value = !selectedDays[index].value },
+                label = {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium
                     )
-                )
-            } - ${
-                schedule.days.mapIndexedNotNull { index, selected ->
-                    if (selected) listOf(
-                        "M",
-                        "T",
-                        "W",
-                        "T",
-                        "F",
-                        "S",
-                        "S"
-                    )[index] else null
-                }.joinToString()
-            }"
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                },
+                selected = selectedDays[index].value,
+                modifier = Modifier.height(36.dp)
+            )
         }
     }
 }
