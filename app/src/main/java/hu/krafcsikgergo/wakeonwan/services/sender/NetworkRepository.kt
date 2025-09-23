@@ -102,7 +102,7 @@ class NetworkRepositoryImpl(
 
     override suspend fun getServerStatus(baseUrl: String): Boolean {
         return try {
-            val response = httpClient.get("$baseUrl/test")
+            val response = httpClient.get("$baseUrl/test-server")
             val isHealthy = response.status.value in 200..299
             Log.d(
                 "NetworkRepository",

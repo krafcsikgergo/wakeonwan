@@ -19,7 +19,7 @@ This is a dual-phone Android app for remote PC wake/shutdown via Wake-on-LAN and
 
 ### Network Communication
 - **Client**: Ktor client with Android engine (replaces Retrofit for consistency)
-- **Server**: Ktor with routes: `/wakeup`, `/shutdown`, `/test`, `/` (health check)
+- **Server**: Ktor with routes: `/wakeup`, `/shutdown`, `/test-server`, `/` (health check)
 - **Port Forwarding**: External traffic → Router → Receiver phone's Ktor server
 
 ## Development Patterns

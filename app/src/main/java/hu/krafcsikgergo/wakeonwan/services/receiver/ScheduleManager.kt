@@ -7,19 +7,219 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import hu.krafcsikgergo.wakeonwan.services.AlarmReceiver
+import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoField
 
 interface ScheduleManager {
+    // CRUD operations
+    suspend fun getAllSchedules(): List<Schedule>
+    suspend fun createSchedule(time: LocalTime, turnOn: Boolean, days: List<Boolean>, enabled: Boolean = true): Result<Schedule>
+    suspend fun updateSchedule(scheduleId: Int, time: LocalTime, turnOn: Boolean, days: List<Boolean>, enabled: Boolean = true): Result<Schedule>
+    suspend fun deleteSchedule(scheduleId: Int): Result<Unit>
+    
+    // Alarm management (existing methods)
     fun scheduleAlarms(context: Context, schedules: List<Schedule>)
     fun cancelAlarm(context: Context, scheduleId: Int)
+    
+    // Lifecycle management
+    suspend fun initializeFromDataStore(context: Context): Result<Unit>
 }
 
-class ScheduleManagerImpl : ScheduleManager {
+class ScheduleManagerImpl(
+    private val dataStoreManager: DataStoreManager
+) : ScheduleManager {
+    
+    // CRUD Operations
+    
+    override suspend fun getAllSchedules(): List<Schedule> {
+        return withContext(Dispatchers.IO) {
+            try {
+                dataStoreManager.getSchedules()
+            } catch (e: Exception) {
+                Log.e("ScheduleManager", "Failed to get schedules", e)
+                emptyList()
+            }
+        }
+    }
+    
+    override suspend fun createSchedule(time: LocalTime, turnOn: Boolean, days: List<Boolean>, enabled: Boolean): Result<Schedule> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Validate input
+                if (days.size != 7) {
+                    return@withContext Result.failure(IllegalArgumentException("Days array must have exactly 7 elements"))
+                }
+                
+                if (days.none { it }) {
+                    return@withContext Result.failure(IllegalArgumentException("At least one day must be selected"))
+                }
+                
+                val timeInSeconds = time.toSecondOfDay().toLong()
+                if (timeInSeconds < 0 || timeInSeconds > 86399) {
+                    return@withContext Result.failure(IllegalArgumentException("Time must be between 0 and 86399 seconds"))
+                }
+                
+                // Generate unique ID
+                val existingSchedules = dataStoreManager.getSchedules()
+                val newId = generateNewScheduleId(existingSchedules)
+                
+                val newSchedule = Schedule(
+                    id = newId,
+                    time = timeInSeconds,
+                    turnOn = turnOn,
+                    days = days,
+                    enabled = enabled
+                )
+                
+                // Save to DataStore
+                dataStoreManager.saveSchedule(newSchedule)
+                Log.d("ScheduleManager", "Schedule ${newSchedule.id} created and saved to DataStore")
+                
+                Result.success(newSchedule)
+            } catch (e: Exception) {
+                Log.e("ScheduleManager", "Failed to create schedule", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    override suspend fun updateSchedule(scheduleId: Int, time: LocalTime, turnOn: Boolean, days: List<Boolean>, enabled: Boolean): Result<Schedule> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Validate input
+                if (days.size != 7) {
+                    return@withContext Result.failure(IllegalArgumentException("Days array must have exactly 7 elements"))
+                }
+
+                if (days.none { it }) {
+                    return@withContext Result.failure(IllegalArgumentException("At least one day must be selected"))
+                }
+
+                val timeInSeconds = time.toSecondOfDay().toLong()
+                if (timeInSeconds < 0 || timeInSeconds > 86399) {
+                    return@withContext Result.failure(IllegalArgumentException("Time must be between 0 and 86399 seconds"))
+                }
+
+                // Check if schedule exists
+                val existingSchedules = dataStoreManager.getSchedules()
+                val scheduleExists = existingSchedules.any { it.id == scheduleId }
+
+                if (!scheduleExists) {
+                    return@withContext Result.failure(IllegalArgumentException("Schedule with ID $scheduleId not found"))
+                }
+
+                val updatedSchedule = Schedule(
+                    id = scheduleId,
+                    time = timeInSeconds,
+                    turnOn = turnOn,
+                    days = days,
+                    enabled = enabled
+                )
+
+                // Update in DataStore (remove old, add new)
+                dataStoreManager.removeSchedule(scheduleId)
+                dataStoreManager.saveSchedule(updatedSchedule)
+
+                Log.d("ScheduleManager", "Schedule $scheduleId updated in DataStore")
+
+                Result.success(updatedSchedule)
+            } catch (e: Exception) {
+                Log.e("ScheduleManager", "Failed to update schedule", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    override suspend fun deleteSchedule(scheduleId: Int): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Check if schedule exists
+                val existingSchedules = dataStoreManager.getSchedules()
+                val scheduleExists = existingSchedules.any { it.id == scheduleId }
+                
+                if (!scheduleExists) {
+                    return@withContext Result.failure(IllegalArgumentException("Schedule with ID $scheduleId not found"))
+                }
+                
+                // Remove from DataStore
+                dataStoreManager.removeSchedule(scheduleId)
+                
+                Log.d("ScheduleManager", "Schedule $scheduleId deleted from DataStore")
+                
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Log.e("ScheduleManager", "Failed to delete schedule", e)
+                Result.failure(e)
+            }
+        }
+    }
+    
+    override suspend fun initializeFromDataStore(context: Context): Result<Unit> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d("ScheduleManager", "Initializing schedules from DataStore")
+                val schedules = dataStoreManager.getSchedules()
+                
+                if (schedules.isEmpty()) {
+                    Log.d("ScheduleManager", "No schedules found to initialize")
+                    return@withContext Result.success(Unit)
+                }
+                
+                Log.d("ScheduleManager", "Scheduling ${schedules.size} alarms from DataStore")
+                scheduleAlarms(context, schedules)
+                
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Log.e("ScheduleManager", "Failed to initialize from DataStore", e)
+                Result.failure(e)
+            }
+        }
+    }
+    
+    // Alarm Management (existing functionality)
+    
+    /**
+     * Checks if the app can schedule exact alarms and logs the permission status
+     */
+    private fun checkExactAlarmPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val canScheduleExact = alarmManager.canScheduleExactAlarms()
+            
+            if (canScheduleExact) {
+                Log.d("ScheduleManager", "SCHEDULE_EXACT_ALARM permission granted - using exact alarms")
+            } else {
+                Log.w("ScheduleManager", "SCHEDULE_EXACT_ALARM permission denied - using inexact alarms as fallback")
+                Log.i("ScheduleManager", "To enable exact alarms, go to Settings > Apps > Special app access > Alarms & reminders")
+            }
+            
+            return canScheduleExact
+        } else {
+            Log.d("ScheduleManager", "Android < 12 - exact alarms available without permission")
+            return true
+        }
+    }
+    
     override fun scheduleAlarms(context: Context, schedules: List<Schedule>) {
         Log.d("ScheduleManager", "Scheduling alarms for ${schedules.size} schedules")
         
+        // Check permission status upfront for user awareness
+        val hasExactPermission = checkExactAlarmPermission(context)
+        if (!hasExactPermission) {
+            Log.w("ScheduleManager", "Proceeding with inexact alarms - schedules may be less precise")
+        }
+        
         schedules.forEach { schedule ->
+            // Skip disabled schedules
+            if (!schedule.enabled) {
+                Log.d("ScheduleManager", "Skipping disabled schedule ${schedule.id}")
+                return@forEach
+            }
+            
             // Validate schedule
             if (schedule.days.size != 7) {
                 Log.e("ScheduleManager", "Invalid schedule ${schedule.id}: days array must have 7 elements")
@@ -41,9 +241,13 @@ class ScheduleManagerImpl : ScheduleManager {
                     val requestCode = generateSafeRequestCode(schedule.id, dayIndex)
                     
                     val intent = Intent(context, AlarmReceiver::class.java).apply {
+                        action = "hu.krafcsikgergo.wakeonwan.ALARM_TRIGGER"
                         putExtra("turnOn", schedule.turnOn)
                         putExtra("scheduleId", schedule.id)
                         putExtra("dayIndex", dayIndex)
+                        // Add FLAG_RECEIVER_FOREGROUND to allow receiver to run at foreground priority
+                        // This helps ensure alarm delivery even when device is in Doze mode
+                        addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                     }
                     val pendingIntent = PendingIntent.getBroadcast(
                         context,
@@ -86,20 +290,41 @@ class ScheduleManagerImpl : ScheduleManager {
         // Weekly interval in milliseconds (7 days)
         val weeklyInterval = 7L * 24L * 60L * 60L * 1000L
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
-                Log.d("ScheduleManager", "Scheduling weekly repeating alarm")
-                alarmManager.setRepeating(AlarmManager.RTC_WAKEUP, alarmTime, weeklyInterval, pendingIntent)
-            } else {
-                Log.d("ScheduleManager", "Requesting permission to schedule exact alarms")
-                val intent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    Log.d("ScheduleManager", "Scheduling exact weekly alarm with setExactAndAllowWhileIdle")
+                    // Use setExactAndAllowWhileIdle for better reliability than setRepeating
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
+                    Log.d("ScheduleManager", "Exact alarm scheduled successfully")
+                } else {
+                    Log.w("ScheduleManager", "SCHEDULE_EXACT_ALARM permission denied, falling back to inexact alarm")
+                    // Fall back to inexact alarm - will be less precise but still functional
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
+                    Log.d("ScheduleManager", "Inexact alarm scheduled as fallback")
                 }
-                context.startActivity(intent)
+            } else {
+                Log.d("ScheduleManager", "Scheduling exact alarm (Android < 12)")
+                // For older Android versions, setExact is still available
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
+                Log.d("ScheduleManager", "Exact alarm scheduled successfully")
             }
-        } else {
-            Log.d("ScheduleManager", "Scheduling weekly repeating alarm")
-            alarmManager.setRepeating(AlarmManager.RTC_WAKEUP, alarmTime, weeklyInterval, pendingIntent)
+        } catch (e: SecurityException) {
+            Log.e("ScheduleManager", "SecurityException when scheduling alarm, falling back to inexact", e)
+            try {
+                // Final fallback - try inexact alarm even if exact was supposed to work
+                alarmManager.setInexactRepeating(
+                    AlarmManager.RTC_WAKEUP, 
+                    alarmTime, 
+                    AlarmManager.INTERVAL_DAY * 7,
+                    pendingIntent
+                )
+                Log.d("ScheduleManager", "Inexact alarm scheduled as security fallback")
+            } catch (fallbackException: Exception) {
+                Log.e("ScheduleManager", "Failed to schedule any alarm - both exact and inexact failed", fallbackException)
+            }
+        } catch (e: Exception) {
+            Log.e("ScheduleManager", "Unexpected error scheduling alarm", e)
         }
     }
 
@@ -154,7 +379,11 @@ class ScheduleManagerImpl : ScheduleManager {
         // Cancel alarms for all possible days (0-6) using the same logic as scheduling
         for (dayIndex in 0..6) {
             val requestCode = generateSafeRequestCode(scheduleId, dayIndex)
-            val intent = Intent(context, AlarmReceiver::class.java)
+            val intent = Intent(context, AlarmReceiver::class.java).apply {
+                action = "hu.krafcsikgergo.wakeonwan.ALARM_TRIGGER"
+                // Use same flags as when creating to ensure proper matching
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+            }
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 requestCode,
@@ -171,5 +400,21 @@ class ScheduleManagerImpl : ScheduleManager {
                 Log.d("ScheduleManager", "No alarm found for schedule $scheduleId, day $dayIndex")
             }
         }
+    }
+    
+    /**
+     * Generates a new unique ID for a schedule.
+     */
+    private fun generateNewScheduleId(existingSchedules: List<Schedule>): Int {
+        val existingIds = existingSchedules.map { it.id }.toSet()
+        val baseId = (existingSchedules.maxOfOrNull { it.id } ?: 0) + 1
+        
+        // Ensure we don't have ID collisions and stay within safe bounds
+        var newId = baseId
+        while (existingIds.contains(newId) || newId > 100000) { // Keep IDs reasonable to avoid overflow
+            newId = (1..100000).random()
+        }
+        
+        return newId
     }
 }

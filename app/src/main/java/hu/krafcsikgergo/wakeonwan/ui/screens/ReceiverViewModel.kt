@@ -191,10 +191,7 @@ class ReceiverViewModel(
         uiState = uiState.copy(isTestWakeOnLanInProgress = true)
         viewModelScope.launch {
             try {
-                val result = wakeOnLanService.sendWakeOnLanPacket(
-                    macAddress = uiState.serverData.macAddress,
-                    ipAddress = uiState.serverData.ipAddress
-                )
+                val result = wakeOnLanService.sendWakeOnLanPacket(uiState.serverData)
                 result.fold(
                     onSuccess = { message ->
                         uiState = uiState.copy(

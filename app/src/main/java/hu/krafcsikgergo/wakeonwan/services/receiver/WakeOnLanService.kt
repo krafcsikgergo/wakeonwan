@@ -4,15 +4,12 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import hu.krafcsikgergo.wakeonwan.services.receiver.KtorServerService
-import hu.krafcsikgergo.wakeonwan.services.sendWakeOnLANPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 
-/**
- * Service interface for Wake-on-LAN and SSH operations.
- * Handles the actual server service lifecycle and low-level network operations.
- */
 interface WakeOnLanService {
     var serverStarted: Long?
 
@@ -36,46 +33,14 @@ interface WakeOnLanService {
 
     /**
      * Sends a Wake-on-LAN magic packet to the specified MAC address.
-     * @param macAddress The MAC address to wake up
-     * @param ipAddress The broadcast IP address to use
-     * @return Result indicating success or failure with message
      */
-    suspend fun sendWakeOnLanPacket(macAddress: String, ipAddress: String): Result<String>
+    suspend fun sendWakeOnLanPacket(serverData: ServerData): Result<String>
 
     /**
      * Executes SSH shutdown command on the target server.
-     * @param ipAddress The server IP address
-     * @param username The SSH username
-     * @param password The SSH password
-     * @param port The SSH port (default 22)
-     * @param shutdownCommand The shutdown command to execute
-     * @return Result indicating success or failure with message
      */
-    suspend fun executeShutdownCommand(
-        ipAddress: String,
-        username: String,
-        password: String,
-        port: Int = 22,
-        shutdownCommand: String = "sudo shutdown now"
-    ): Result<String>
-
-    /**
-     * Gets the current status of the WOL service.
-     * @return Service status information
-     */
-    suspend fun getServiceStatus(): WakeOnLanServiceStatus
+    suspend fun executeShutdownCommand(serverData: ServerData): Result<String>
 }
-
-/**
- * Status information for the Wake-on-LAN service.
- */
-data class WakeOnLanServiceStatus(
-    val isKtorServerRunning: Boolean = false,
-    val serverIpAddress: String = "",
-    val serverPort: Int = 0,
-    val lastWakeAttempt: Long? = null,
-    val lastShutdownAttempt: Long? = null
-)
 
 /**
  * Implementation of WakeOnLanService that manages Ktor server service
@@ -87,7 +52,7 @@ class WakeOnLanServiceImpl(
 ) : WakeOnLanService {
 
     private val TAG = "WakeOnLanService"
-    
+
     override var serverStarted: Long? = null
 
     override suspend fun startKtorServer(): Boolean {
@@ -152,17 +117,39 @@ class WakeOnLanServiceImpl(
         }
     }
 
-    override suspend fun sendWakeOnLanPacket(
-        macAddress: String,
-        ipAddress: String
-    ): Result<String> {
+    override suspend fun sendWakeOnLanPacket(serverData: ServerData): Result<String> {
         return try {
-            withContext(Dispatchers.IO) {
-                sendWakeOnLANPacket(ipAddress, macAddress)
-                val message = "Wake-on-LAN packet sent to $macAddress via $ipAddress"
-                Log.d(TAG, message)
-                Result.success(message)
+            var delimiter = ":"
+            if (!serverData.macAddress.contains(":")) {
+                delimiter = "-"
             }
+
+            // Convert the MAC address to bytes
+            val macBytes = serverData.macAddress.split(delimiter).map { it.toInt(16).toByte() }.toByteArray()
+
+            // Create a byte array for the magic packet
+            val magicPacket = ByteArray(6 + 16 * macBytes.size)
+            // Fill the first 6 bytes with 0xFF
+            for (i in 0 until 6) {
+                magicPacket[i] = 0xFF.toByte()
+            }
+            // Repeat the MAC address 16 times
+            for (i in 6 until magicPacket.size) {
+                magicPacket[i] = macBytes[i % 6]
+            }
+
+            // Create a DatagramPacket with the magic packet and broadcast address
+            val broadcastAddress = InetAddress.getByName("255.255.255.255")
+            val packet = DatagramPacket(magicPacket, magicPacket.size, broadcastAddress, 9)
+
+            // Create a DatagramSocket and send the packet
+            val socket = DatagramSocket()
+            socket.send(packet)
+            socket.close()
+
+            val message = "Wake-on-LAN packet sent to ${serverData.macAddress} via broadcast"
+            Log.d(TAG, message)
+            Result.success(message)
         } catch (e: Exception) {
             val errorMessage = "Failed to send Wake-on-LAN packet: ${e.message}"
             Log.e(TAG, errorMessage, e)
@@ -170,46 +157,22 @@ class WakeOnLanServiceImpl(
         }
     }
 
-    override suspend fun executeShutdownCommand(
-        ipAddress: String,
-        username: String,
-        password: String,
-        port: Int,
-        shutdownCommand: String
-    ): Result<String> {
+    override suspend fun executeShutdownCommand(serverData: ServerData): Result<String> {
         return try {
-            withContext(Dispatchers.IO) {
-                val success = sshManager.executeCommand(shutdownCommand)
+            val sshResult = sshManager.executeCommand(serverData, "sudo shutdown now")
 
-                if (success) {
-                    val message = "Shutdown command executed successfully on $ipAddress"
-                    Log.d(TAG, message)
-                    Result.success(message)
-                } else {
-                    val errorMessage = "Failed to execute shutdown command on $ipAddress"
-                    Log.e(TAG, errorMessage)
-                    Result.failure(Exception(errorMessage))
-                }
+            if (!sshResult.success) {
+                throw sshResult.error
+                    ?: Exception("SSH command failed with exit status ${sshResult.exitStatus}")
             }
+
+            val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
+            Log.d(TAG, message)
+            Result.success(message)
         } catch (e: Exception) {
-            val errorMessage = "SSH connection failed to $ipAddress: ${e.message}"
+            val errorMessage = "SSH connection failed to ${serverData.ipAddress}: ${e.message}"
             Log.e(TAG, errorMessage, e)
             Result.failure(Exception(errorMessage, e))
-        }
-    }
-
-    override suspend fun getServiceStatus(): WakeOnLanServiceStatus {
-        return try {
-            WakeOnLanServiceStatus(
-                isKtorServerRunning = isKtorServerRunning(),
-                serverIpAddress = "", // TODO: Get from configuration when available
-                serverPort = 0, // TODO: Get from configuration when available
-                lastWakeAttempt = null, // TODO: Implement when needed
-                lastShutdownAttempt = null // TODO: Implement when needed
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting service status: ${e.message}", e)
-            WakeOnLanServiceStatus() // Return default status
         }
     }
 }

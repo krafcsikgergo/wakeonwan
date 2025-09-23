@@ -24,7 +24,8 @@ data class Schedule(
     val id: Int = (0..Int.MAX_VALUE).random(),
     val time: Long, // seconds since midnight (0-86399)
     val turnOn: Boolean,
-    val days: List<Boolean> // Represents days from Monday to Sunday (index 0 = Monday)
+    val days: List<Boolean>, // Represents days from Monday to Sunday (index 0 = Monday)
+    val enabled: Boolean = true // Controls whether the schedule is active
 ) {
     val timeInLocalTime: LocalTime
         get() = LocalTime.ofSecondOfDay(time)

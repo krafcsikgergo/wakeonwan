@@ -5,17 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import hu.krafcsikgergo.wakeonwan.R
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
-import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManager
-import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
-import hu.krafcsikgergo.wakeonwan.services.receiver.defaultKtorPort
-import hu.krafcsikgergo.wakeonwan.services.sendWakeOnLANPacket
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
 import io.ktor.server.application.Application
@@ -37,9 +32,12 @@ import org.koin.android.ext.android.inject
 import java.net.InetAddress
 
 class KtorServerService : Service() {
+    private val TAG = "KtorServerService"
     private lateinit var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>
     private val dataStoreManager: DataStoreManager by inject()
     private val sshManager: SSHManager by inject()
+    private val wakeOnLanService: WakeOnLanService by inject()
+    private val scheduleManager: ScheduleManager by inject()
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "ktor_server_channel"
@@ -54,13 +52,13 @@ class KtorServerService : Service() {
         super.onCreate()
         startServer()
         startForegroundService()
-        Log.d("Server", "Service started")
+        Log.d(TAG, "Service started")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopServer()
-        Log.d("Server", "Service stopped")
+        Log.d(TAG, "Service stopped")
     }
 
     private fun startServer() {
@@ -68,12 +66,12 @@ class KtorServerService : Service() {
             configureApplication()
         }
         server.start()
-        Log.d("Server", "Server started on port ${defaultKtorPort}")
+        Log.d(TAG, "Server started on port ${defaultKtorPort}")
     }
 
     private fun stopServer() {
         server.stop(500, 1000)
-        Log.d("Server", "Server stopped")
+        Log.d(TAG, "Server stopped")
     }
 
     private fun startForegroundService() {
@@ -119,6 +117,7 @@ class KtorServerService : Service() {
         }
 
         routing {
+            // Testing
             get("/") {
                 call.respond(
                     HttpStatusCode.Companion.OK,
@@ -126,31 +125,42 @@ class KtorServerService : Service() {
                 )
             }
 
+            // Wake-on-LAN
             get("/wakeup") {
-                Log.d("Server", "Received request to wake up")
+                Log.d(TAG, "Received request to wake up")
 
                 // Use DataStoreManager instead of global ServerData
                 val serverData = dataStoreManager.getServerData()
 
-                if (serverData?.macAddress == null) {
+                if (serverData == null) {
                     call.respond(
                         HttpStatusCode.Companion.PreconditionFailed,
-                        mapOf("message" to "Missing macAddress or ipAddress on host device")
+                        mapOf("message" to "Server configuration not found")
                     )
                     return@get
                 }
 
-                withContext(Dispatchers.IO) {
-                    sendWakeOnLANPacket(serverData.ipAddress, serverData.macAddress)
-                }
-                call.respond(
-                    HttpStatusCode.Companion.OK,
-                    mapOf("message" to "Wake-up request sent successfully")
+                val result = wakeOnLanService.sendWakeOnLanPacket(serverData)
+
+                result.fold(
+                    onSuccess = { message ->
+                        call.respond(
+                            HttpStatusCode.Companion.OK,
+                            mapOf("message" to message)
+                        )
+                    },
+                    onFailure = { exception ->
+                        call.respond(
+                            HttpStatusCode.Companion.InternalServerError,
+                            mapOf("message" to "Wake-up request failed: ${exception.message}")
+                        )
+                    }
                 )
             }
 
-            get("/test") {
-                Log.d("Server", "Received request to test connection")
+            // Test server connection (ping + SSH)
+            get("/test-server") {
+                Log.d(TAG, "Received request to test connection")
 
                 val serverData = dataStoreManager.getServerData()
                 val ipAddress = serverData?.ipAddress
@@ -167,7 +177,7 @@ class KtorServerService : Service() {
                     ping(ipAddress)
                 }
 
-                Log.d("Server", "Host is reachable via ping: $isReachable")
+                Log.d(TAG, "Host is reachable via ping: $isReachable")
 
                 // If ping fails, don't bother testing SSH
                 if (!isReachable) {
@@ -181,10 +191,10 @@ class KtorServerService : Service() {
                 }
 
                 val sshConnectable = withContext(Dispatchers.IO) {
-                    sshManager.testConnection()
+                    sshManager.testConnection(serverData)
                 }
 
-                Log.d("Server", "Host is reachable via SSH: $sshConnectable")
+                Log.d(TAG, "Host is reachable via SSH: $sshConnectable")
 
                 val response = mutableMapOf<String, Any>()
                 response["ping"] = true
@@ -199,8 +209,9 @@ class KtorServerService : Service() {
                 }
             }
 
+            // Shutdown via SSH
             get("/shutdown") {
-                Log.d("Server", "Received request to shutdown")
+                Log.d(TAG, "Received request to shutdown")
 
                 val serverData = dataStoreManager.getServerData()
 
@@ -212,11 +223,11 @@ class KtorServerService : Service() {
                     return@get
                 }
 
-                val isShutdown = withContext(Dispatchers.IO) {
-                    sshManager.executeCommand("sudo shutdown now")
+                val shutdownResult = withContext(Dispatchers.IO) {
+                    wakeOnLanService.executeShutdownCommand(serverData)
                 }
 
-                if (isShutdown) {
+                if (shutdownResult.isSuccess) {
                     call.respond(
                         HttpStatusCode.Companion.OK,
                         mapOf("message" to "Shutdown request sent successfully")
@@ -229,32 +240,131 @@ class KtorServerService : Service() {
                 }
             }
 
-            // For schedules, you might want to add them to DataStoreManager
-            // or create a separate ScheduleManager that also uses DataStore
-            post("/schedules") {
-                val schedule = call.receive<Schedule>()
-                // Instead of file operations, use DataStore
-                // You might need to extend DataStoreManager to handle schedules
-                dataStoreManager.saveSchedule(schedule)
-                call.respond(
-                    HttpStatusCode.Companion.OK,
-                    mapOf("message" to "Schedule added successfully")
-                )
-            }
-
+            // Get saved schedules
             get("/schedules") {
-                // Read from DataStore instead of file
-                val schedules = dataStoreManager.getSchedules()
-                call.respond(HttpStatusCode.Companion.OK, schedules)
+                Log.d(TAG, "Received request to get schedules")
+
+                try {
+                    val schedules = scheduleManager.getAllSchedules()
+                    call.respond(
+                        HttpStatusCode.Companion.OK,
+                        schedules
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to retrieve schedules", e)
+                    call.respond(
+                        HttpStatusCode.Companion.InternalServerError,
+                        mapOf("message" to "Failed to retrieve schedules: ${e.message}")
+                    )
+                }
             }
 
+            // Add a new schedule
+            post("/schedules") {
+                Log.d(TAG, "Received request to add schedule")
+
+                try {
+                    val schedule = call.receive<Schedule>()
+
+                    // Create schedule via ScheduleManager (includes validation and DataStore persistence)
+                    val result = scheduleManager.createSchedule(
+                        time = schedule.timeInLocalTime,
+                        turnOn = schedule.turnOn,
+                        days = schedule.days,
+                        enabled = schedule.enabled
+                    )
+
+                    result.fold(
+                        onSuccess = { createdSchedule ->
+                            // Schedule alarms for the new schedule
+                            scheduleManager.scheduleAlarms(
+                                this@KtorServerService,
+                                listOf(createdSchedule)
+                            )
+
+                            Log.d(TAG, "Schedule ${createdSchedule.id} added and alarms scheduled")
+                            call.respond(
+                                HttpStatusCode.Companion.Created,
+                                mapOf(
+                                    "message" to "Schedule added successfully",
+                                    "id" to createdSchedule.id
+                                )
+                            )
+                        },
+                        onFailure = { exception ->
+                            Log.e(TAG, "Failed to create schedule", exception)
+                            call.respond(
+                                HttpStatusCode.Companion.BadRequest,
+                                exception.message ?: "Failed to create schedule"
+                            )
+                        }
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to add schedule", e)
+                    call.respond(
+                        HttpStatusCode.Companion.InternalServerError,
+                        mapOf("message" to "Failed to add schedule: ${e.message}")
+                    )
+                }
+            }
+
+            // Delete a schedule by ID
             delete("/schedules/{id}") {
-                val scheduleId = call.parameters["id"]?.toInt() ?: return@delete
-                dataStoreManager.removeSchedule(scheduleId)
-                call.respond(
-                    HttpStatusCode.Companion.OK,
-                    mapOf("message" to "Schedule deleted successfully")
-                )
+                Log.d(TAG, "Received request to delete schedule")
+
+                try {
+                    val scheduleIdStr = call.parameters["id"]
+                    if (scheduleIdStr == null) {
+                        call.respond(
+                            HttpStatusCode.Companion.BadRequest,
+                            mapOf("message" to "Schedule ID is required")
+                        )
+                        return@delete
+                    }
+
+                    val scheduleId = scheduleIdStr.toIntOrNull()
+                    if (scheduleId == null) {
+                        call.respond(
+                            HttpStatusCode.Companion.BadRequest,
+                            mapOf("message" to "Invalid schedule ID format")
+                        )
+                        return@delete
+                    }
+
+                    // Delete schedule via ScheduleManager (includes validation and DataStore persistence)
+                    val result = scheduleManager.deleteSchedule(scheduleId)
+
+                    result.fold(
+                        onSuccess = {
+                            // Cancel alarms for this schedule
+                            scheduleManager.cancelAlarm(this@KtorServerService, scheduleId)
+
+                            Log.d(TAG, "Schedule $scheduleId deleted and alarms cancelled")
+                            call.respond(
+                                HttpStatusCode.Companion.OK,
+                                mapOf("message" to "Schedule deleted successfully")
+                            )
+                        },
+                        onFailure = { exception ->
+                            Log.e(TAG, "Failed to delete schedule", exception)
+                            val statusCode = if (exception.message?.contains("not found") == true) {
+                                HttpStatusCode.Companion.NotFound
+                            } else {
+                                HttpStatusCode.Companion.InternalServerError
+                            }
+                            call.respond(
+                                statusCode,
+                                exception.message ?: "Failed to delete schedule"
+                            )
+                        }
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to delete schedule", e)
+                    call.respond(
+                        HttpStatusCode.Companion.InternalServerError,
+                        mapOf("message" to "Failed to delete schedule: ${e.message}")
+                    )
+                }
             }
         }
     }

@@ -42,7 +42,8 @@ fun SchedulesScreen(onBack: () -> Unit) {
     // Handle toast messages
     uiState.lastOperationMessage?.let { message ->
         LaunchedEffect(message) {
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT)
+                .show()
             viewModel.clearOperationMessage()
         }
     }
@@ -50,7 +51,8 @@ fun SchedulesScreen(onBack: () -> Unit) {
     // Handle error messages
     uiState.errorMessage?.let { message ->
         LaunchedEffect(message) {
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT)
+                .show()
             viewModel.clearError()
         }
     }
@@ -96,6 +98,9 @@ fun SchedulesScreen(onBack: () -> Unit) {
                     schedules = uiState.schedules,
                     onDeleteSchedule = { schedule ->
                         viewModel.deleteSchedule(schedule.id)
+                    },
+                    onToggleSchedule = { scheduleId ->
+                        viewModel.toggleScheduleEnabled(scheduleId)
                     }
                 )
             }
@@ -153,17 +158,19 @@ fun EmptySchedulesState() {
 @Composable
 fun SchedulesList(
     schedules: List<Schedule>,
-    onDeleteSchedule: (Schedule) -> Unit
+    onDeleteSchedule: (Schedule) -> Unit,
+    onToggleSchedule: (Int) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(vertical = 16.dp)
     ) {
         items(schedules) { schedule ->
             ScheduleCard(
                 schedule = schedule,
-                onDelete = { onDeleteSchedule(schedule) }
+                onDelete = { onDeleteSchedule(schedule) },
+                onToggleEnabled = { onToggleSchedule(schedule.id) }
             )
         }
     }
@@ -173,92 +180,143 @@ fun SchedulesList(
 @Composable
 fun ScheduleCard(
     schedule: Schedule,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleEnabled: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (schedule.enabled)
+                MaterialTheme.colorScheme.surfaceVariant
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(20.dp)
         ) {
-            // Action Icon (Wake/Sleep)
-            Card(
-                modifier = Modifier.size(48.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (schedule.turnOn) 
-                        MaterialTheme.colorScheme.primaryContainer 
-                    else 
-                        MaterialTheme.colorScheme.errorContainer
-                ),
-                shape = RoundedCornerShape(12.dp)
+            // Top row: Action icon + Time/Action label + Delete button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                // Action Icon (Wake/Sleep)
+                Card(
+                    modifier = Modifier.size(48.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (schedule.turnOn)
+                            MaterialTheme.colorScheme.primaryContainer.copy(
+                                alpha = if (schedule.enabled) 1f else 0.5f
+                            )
+                        else
+                            MaterialTheme.colorScheme.errorContainer.copy(
+                                alpha = if (schedule.enabled) 1f else 0.5f
+                            )
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (schedule.turnOn) Icons.Default.PowerSettingsNew else Icons.Default.PowerOff,
+                            contentDescription = if (schedule.turnOn) "Wake Up" else "Shutdown",
+                            tint = if (schedule.turnOn)
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(
+                                    alpha = if (schedule.enabled) 1f else 0.5f
+                                )
+                            else
+                                MaterialTheme.colorScheme.onErrorContainer.copy(
+                                    alpha = if (schedule.enabled) 1f else 0.5f
+                                ),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Time and Action Label
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Time
+                    Text(
+                        text = schedule.timeInLocalTime.format(DateTimeFormatter.ofPattern("HH:mm")),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = if (schedule.enabled) 1f else 0.6f
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Action Label
+                    Text(
+                        text = if (schedule.turnOn) "Wake Up" else "Shutdown",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (schedule.turnOn)
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = if (schedule.enabled) 1f else 0.6f
+                            )
+                        else
+                            MaterialTheme.colorScheme.error.copy(
+                                alpha = if (schedule.enabled) 1f else 0.6f
+                            ),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Delete Button - Larger size, closer to corner
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .offset(x = 8.dp, y = (-8).dp)
                 ) {
                     Icon(
-                        if (schedule.turnOn) Icons.Default.PowerSettingsNew else Icons.Default.PowerOff,
-                        contentDescription = if (schedule.turnOn) "Wake Up" else "Shutdown",
-                        tint = if (schedule.turnOn) 
-                            MaterialTheme.colorScheme.onPrimaryContainer 
-                        else 
-                            MaterialTheme.colorScheme.onErrorContainer,
+                        Icons.Default.Delete,
+                        contentDescription = "Delete Schedule",
+                        tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(24.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Schedule Details
-            Column(
-                modifier = Modifier.weight(1f)
+            // Days Row - Full width
+            DaysRow(selectedDays = schedule.days, enabled = schedule.enabled)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Enable/Disable row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Time
                 Text(
-                    text = schedule.timeInLocalTime.format(DateTimeFormatter.ofPattern("HH:mm")),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Action Label
-                Text(
-                    text = if (schedule.turnOn) "Wake Up" else "Shutdown",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (schedule.turnOn) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.error,
+                    text = if (schedule.enabled) "Enabled" else "Disabled",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (schedule.enabled)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Medium
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Days Row
-                DaysRow(selectedDays = schedule.days)
-            }
-
-            // Delete Button
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete Schedule",
-                    tint = MaterialTheme.colorScheme.error
+                Switch(
+                    checked = schedule.enabled,
+                    onCheckedChange = { onToggleEnabled() },
+                    modifier = Modifier.height(24.dp)
                 )
             }
         }
@@ -266,16 +324,18 @@ fun ScheduleCard(
 }
 
 @Composable
-fun DaysRow(selectedDays: List<Boolean>) {
+fun DaysRow(selectedDays: List<Boolean>, enabled: Boolean = true) {
     val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
-    
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        itemsIndexed(dayLabels) { index, label ->
+        dayLabels.forEachIndexed { index, label ->
             DayChip(
                 label = label,
-                isSelected = index < selectedDays.size && selectedDays[index]
+                isSelected = index < selectedDays.size && selectedDays[index],
+                enabled = enabled
             )
         }
     }
@@ -284,15 +344,20 @@ fun DaysRow(selectedDays: List<Boolean>) {
 @Composable
 fun DayChip(
     label: String,
-    isSelected: Boolean
+    isSelected: Boolean,
+    enabled: Boolean = true
 ) {
     Surface(
         modifier = Modifier.size(32.dp),
         shape = RoundedCornerShape(8.dp),
-        color = if (isSelected) 
-            MaterialTheme.colorScheme.primary 
-        else 
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        color = if (isSelected)
+            MaterialTheme.colorScheme.primary.copy(
+                alpha = if (enabled) 1f else 0.5f
+            )
+        else
+            MaterialTheme.colorScheme.outline.copy(
+                alpha = if (enabled) 0.3f else 0.15f
+            )
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -301,10 +366,14 @@ fun DayChip(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isSelected) 
-                    MaterialTheme.colorScheme.onPrimary 
-                else 
-                    MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isSelected)
+                    MaterialTheme.colorScheme.onPrimary.copy(
+                        alpha = if (enabled) 1f else 0.6f
+                    )
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (enabled) 1f else 0.6f
+                    ),
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
             )
         }
@@ -321,12 +390,12 @@ fun AddScheduleDialog(
     var turnOn by remember { mutableStateOf(true) }
     val selectedDays = remember { List(7) { mutableStateOf(false) } }
     var showTimePicker by remember { mutableStateOf(false) }
-    
+
     val context = LocalContext.current
-    
+
     // Validation
     val isValid = selectedDays.any { it.value }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
@@ -427,7 +496,7 @@ fun AddScheduleDialog(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     DaySelectionRow(selectedDays = selectedDays)
-                    
+
                     if (!isValid) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -472,10 +541,10 @@ fun AddScheduleDialog(
             selectedTime.minute,
             true
         )
-        
+
         timePickerDialog.setOnCancelListener { showTimePicker = false }
         timePickerDialog.setOnDismissListener { showTimePicker = false }
-        
+
         DisposableEffect(Unit) {
             timePickerDialog.show()
             onDispose {
@@ -489,7 +558,7 @@ fun AddScheduleDialog(
 @Composable
 fun DaySelectionRow(selectedDays: List<MutableState<Boolean>>) {
     val dayLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    
+
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {

@@ -1,6 +1,10 @@
 package hu.krafcsikgergo.wakeonwan.ui.screens
 
+import android.app.AlarmManager
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,6 +32,83 @@ class SchedulesViewModel(
 
     init {
         loadSchedules()
+        checkAlarmPermissionStatus()
+    }
+
+    /**
+     * Checks if the app can schedule exact alarms and updates UI state accordingly
+     */
+    private fun checkAlarmPermissionStatus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val canScheduleExact = alarmManager.canScheduleExactAlarms()
+            
+            uiState = uiState.copy(hasExactAlarmPermission = canScheduleExact)
+            
+            if (!canScheduleExact) {
+                Log.w("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission not granted")
+                uiState = uiState.copy(
+                    permissionWarning = "For precise scheduling, please grant 'Alarms & reminders' permission in Settings"
+                )
+            } else {
+                Log.d("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission granted")
+            }
+        } else {
+            // Pre-Android 12 doesn't need permission
+            uiState = uiState.copy(hasExactAlarmPermission = true)
+        }
+    }
+
+    /**
+     * Opens system settings to request exact alarm permission
+     */
+    fun requestExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+                Log.d("SchedulesViewModel", "Opened exact alarm permission settings")
+            } catch (e: Exception) {
+                Log.e("SchedulesViewModel", "Failed to open exact alarm permission settings", e)
+                uiState = uiState.copy(
+                    errorMessage = "Failed to open permission settings. Please go to Settings > Apps > Special app access > Alarms & reminders manually."
+                )
+            }
+        }
+    }
+
+    /**
+     * Called when returning from permission settings to refresh permission status
+     */
+    fun onPermissionSettingsReturn() {
+        checkAlarmPermissionStatus()
+        if (uiState.hasExactAlarmPermission) {
+            uiState = uiState.copy(
+                lastOperationMessage = "Exact alarm permission granted! Schedules will now be more precise.",
+                permissionWarning = null
+            )
+            // Re-schedule all alarms with exact timing if permission was granted
+            rescheduleAllAlarms()
+        }
+    }
+
+    /**
+     * Re-schedules all existing alarms (useful after permission change)
+     */
+    private fun rescheduleAllAlarms() {
+        viewModelScope.launch {
+            try {
+                val schedules = scheduleManager.getAllSchedules()
+                if (schedules.isNotEmpty()) {
+                    scheduleManager.scheduleAlarms(context, schedules)
+                    Log.d("SchedulesViewModel", "Re-scheduled ${schedules.size} alarms after permission change")
+                }
+            } catch (e: Exception) {
+                Log.e("SchedulesViewModel", "Failed to reschedule alarms", e)
+            }
+        }
     }
 
     /**
@@ -37,7 +118,7 @@ class SchedulesViewModel(
         viewModelScope.launch {
             try {
                 uiState = uiState.copy(isLoading = true, errorMessage = null)
-                val schedules = dataStoreManager.getSchedules()
+                val schedules = scheduleManager.getAllSchedules()
                 uiState = uiState.copy(
                     schedules = schedules,
                     isLoading = false
@@ -59,42 +140,32 @@ class SchedulesViewModel(
         turnOn: Boolean,
         days: List<Boolean>
     ) {
-        // Validation
-        if (days.none { it }) {
-            uiState = uiState.copy(errorMessage = "Please select at least one day")
-            return
-        }
-        
-        if (days.size != 7) {
-            uiState = uiState.copy(errorMessage = "Days list must contain exactly 7 elements")
-            return
-        }
-
-        val timeInSeconds = time.toSecondOfDay().toLong()
         viewModelScope.launch {
             try {
                 uiState = uiState.copy(isLoading = true, errorMessage = null)
                 
-                val newId = generateNewScheduleId()
-                val newSchedule = Schedule(
-                    id = newId,
-                    time = timeInSeconds,
-                    turnOn = turnOn,
-                    days = days
-                )
-
-                // Save to DataStore first - if this fails, don't schedule alarms
-                dataStoreManager.saveSchedule(newSchedule)
+                // Create schedule via ScheduleManager (includes validation and DataStore persistence)
+                val result = scheduleManager.createSchedule(time, turnOn, days, enabled = true)
                 
-                // Only schedule alarms if save was successful
-                scheduleManager.scheduleAlarms(context, listOf(newSchedule))
-
-                // Update local state
-                uiState = uiState.copy(
-                    schedules = uiState.schedules + newSchedule,
-                    lastOperationMessage = "Schedule created and alarm set successfully",
-                    errorMessage = null,
-                    isLoading = false
+                result.fold(
+                    onSuccess = { newSchedule ->
+                        // Schedule alarms for the new schedule
+                        scheduleManager.scheduleAlarms(context, listOf(newSchedule))
+                        
+                        // Update local state
+                        uiState = uiState.copy(
+                            schedules = uiState.schedules + newSchedule,
+                            lastOperationMessage = "Schedule created and alarm set successfully",
+                            errorMessage = null,
+                            isLoading = false
+                        )
+                    },
+                    onFailure = { error ->
+                        uiState = uiState.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Failed to create schedule"
+                        )
+                    }
                 )
             } catch (e: Exception) {
                 uiState = uiState.copy(
@@ -114,33 +185,49 @@ class SchedulesViewModel(
         turnOn: Boolean,
         days: List<Boolean>
     ) {
-        val timeInSeconds = time.toSecondOfDay().toLong()
         viewModelScope.launch {
             try {
-                val updatedSchedule = Schedule(
-                    id = scheduleId,
-                    time = timeInSeconds,
-                    turnOn = turnOn,
-                    days = days
-                )
-
-                dataStoreManager.removeSchedule(scheduleId)
-                dataStoreManager.saveSchedule(updatedSchedule)
+                val existingSchedule = uiState.schedules.find { it.id == scheduleId }
+                if (existingSchedule == null) {
+                    uiState = uiState.copy(
+                        errorMessage = "Schedule not found"
+                    )
+                    return@launch
+                }
                 
-                // Cancel old alarm and schedule new one
-                scheduleManager.cancelAlarm(context, scheduleId)
-                scheduleManager.scheduleAlarms(context, listOf(updatedSchedule))
-
-                // Update local state
-                uiState = uiState.copy(
-                    schedules = uiState.schedules.map {
-                        if (it.id == scheduleId) updatedSchedule else it
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+                
+                // Update schedule via ScheduleManager (includes validation and DataStore persistence)
+                val result = scheduleManager.updateSchedule(scheduleId, time, turnOn, days, existingSchedule.enabled)
+                
+                result.fold(
+                    onSuccess = { updatedSchedule ->
+                        // Cancel old alarms and schedule new ones if enabled
+                        scheduleManager.cancelAlarm(context, scheduleId)
+                        if (updatedSchedule.enabled) {
+                            scheduleManager.scheduleAlarms(context, listOf(updatedSchedule))
+                        }
+                        
+                        // Update local state
+                        uiState = uiState.copy(
+                            schedules = uiState.schedules.map {
+                                if (it.id == scheduleId) updatedSchedule else it
+                            },
+                            lastOperationMessage = "Schedule updated successfully",
+                            errorMessage = null,
+                            isLoading = false
+                        )
                     },
-                    lastOperationMessage = "Schedule updated successfully",
-                    errorMessage = null
+                    onFailure = { error ->
+                        uiState = uiState.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Failed to update schedule"
+                        )
+                    }
                 )
             } catch (e: Exception) {
                 uiState = uiState.copy(
+                    isLoading = false,
                     errorMessage = "Failed to update schedule: ${e.message}"
                 )
             }
@@ -153,19 +240,34 @@ class SchedulesViewModel(
     fun deleteSchedule(scheduleId: Int) {
         viewModelScope.launch {
             try {
-                dataStoreManager.removeSchedule(scheduleId)
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
                 
-                // Cancel the alarm
-                scheduleManager.cancelAlarm(context, scheduleId)
-
-                // Update local state
-                uiState = uiState.copy(
-                    schedules = uiState.schedules.filter { it.id != scheduleId },
-                    lastOperationMessage = "Schedule deleted and alarm cancelled successfully",
-                    errorMessage = null
+                // Delete schedule via ScheduleManager (includes validation and DataStore persistence)
+                val result = scheduleManager.deleteSchedule(scheduleId)
+                
+                result.fold(
+                    onSuccess = {
+                        // Cancel the alarms
+                        scheduleManager.cancelAlarm(context, scheduleId)
+                        
+                        // Update local state
+                        uiState = uiState.copy(
+                            schedules = uiState.schedules.filter { it.id != scheduleId },
+                            lastOperationMessage = "Schedule deleted and alarm cancelled successfully",
+                            errorMessage = null,
+                            isLoading = false
+                        )
+                    },
+                    onFailure = { error ->
+                        uiState = uiState.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Failed to delete schedule"
+                        )
+                    }
                 )
             } catch (e: Exception) {
                 uiState = uiState.copy(
+                    isLoading = false,
                     errorMessage = "Failed to delete schedule: ${e.message}"
                 )
             }
@@ -174,6 +276,69 @@ class SchedulesViewModel(
 
     /**
      * Toggles a schedule between enabled and disabled.
+     */
+    fun toggleScheduleEnabled(scheduleId: Int) {
+        viewModelScope.launch {
+            try {
+                val schedule = uiState.schedules.find { it.id == scheduleId }
+                if (schedule != null) {
+                    uiState = uiState.copy(isLoading = true, errorMessage = null)
+                    
+                    // Toggle the enabled state
+                    val result = scheduleManager.updateSchedule(
+                        scheduleId = schedule.id,
+                        time = schedule.timeInLocalTime,
+                        turnOn = schedule.turnOn,
+                        days = schedule.days,
+                        enabled = !schedule.enabled
+                    )
+                    
+                    result.fold(
+                        onSuccess = { updatedSchedule ->
+                            if (updatedSchedule.enabled) {
+                                // Schedule alarms for the enabled schedule
+                                scheduleManager.scheduleAlarms(context, listOf(updatedSchedule))
+                            } else {
+                                // Cancel alarms for the disabled schedule
+                                scheduleManager.cancelAlarm(context, scheduleId)
+                            }
+                            
+                            // Update local state
+                            uiState = uiState.copy(
+                                schedules = uiState.schedules.map {
+                                    if (it.id == scheduleId) updatedSchedule else it
+                                },
+                                lastOperationMessage = if (updatedSchedule.enabled) 
+                                    "Schedule enabled and alarms set" 
+                                else 
+                                    "Schedule disabled and alarms cancelled",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                        },
+                        onFailure = { error ->
+                            uiState = uiState.copy(
+                                isLoading = false,
+                                errorMessage = error.message ?: "Failed to toggle schedule"
+                            )
+                        }
+                    )
+                } else {
+                    uiState = uiState.copy(
+                        errorMessage = "Schedule not found"
+                    )
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(
+                    isLoading = false,
+                    errorMessage = "Failed to toggle schedule: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Legacy toggle method - toggles turnOn property instead of enabled
      */
     fun toggleSchedule(scheduleId: Int) {
         val schedule = uiState.schedules.find { it.id == scheduleId }
@@ -227,20 +392,10 @@ class SchedulesViewModel(
     }
 
     /**
-     * Generates a new unique ID for a schedule.
-     * Uses current timestamp to avoid collisions and ensure uniqueness.
+     * Clears the permission warning.
      */
-    private fun generateNewScheduleId(): Int {
-        val existingIds = uiState.schedules.map { it.id }.toSet()
-        val baseId = (uiState.schedules.maxOfOrNull { it.id } ?: 0) + 1
-        
-        // Ensure we don't have ID collisions and stay within safe bounds
-        var newId = baseId
-        while (existingIds.contains(newId) || newId > 100000) { // Keep IDs reasonable to avoid overflow
-            newId = (1..100000).random()
-        }
-        
-        return newId
+    fun clearPermissionWarning() {
+        uiState = uiState.copy(permissionWarning = null)
     }
 }
 
@@ -251,5 +406,7 @@ data class SchedulesUiState(
     val schedules: List<Schedule> = emptyList(),
     val isLoading: Boolean = false,
     val lastOperationMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val hasExactAlarmPermission: Boolean = true,
+    val permissionWarning: String? = null
 )
