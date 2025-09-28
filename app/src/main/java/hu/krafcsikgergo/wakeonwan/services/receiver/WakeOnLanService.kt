@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
@@ -48,7 +49,8 @@ interface WakeOnLanService {
  */
 class WakeOnLanServiceImpl(
     private val context: Context,
-    private val sshManager: SSHManager
+    private val sshManager: SSHManager,
+    private val logManager: LogManager
 ) : WakeOnLanService {
 
     private val TAG = "WakeOnLanService"
@@ -57,11 +59,11 @@ class WakeOnLanServiceImpl(
 
     override suspend fun startKtorServer(): Boolean {
         if (isKtorServerRunning()) {
-            Log.d(TAG, "Ktor server is already running.")
+            logManager.d(TAG, "Ktor server is already running.")
             // If server is already running but we don't have a start time, set it now
             if (serverStarted == null) {
                 serverStarted = System.currentTimeMillis()
-                Log.d(TAG, "Set server start time for existing running server: $serverStarted")
+                logManager.d(TAG, "Set server start time for existing running server: $serverStarted")
             }
             return true
         }
@@ -75,10 +77,10 @@ class WakeOnLanServiceImpl(
                 }
                 result != null
             }.also { success ->
-                Log.d(TAG, "Ktor server start attempt: ${if (success) "success" else "failed"}")
+                logManager.d(TAG, "Ktor server start attempt: ${if (success) "success" else "failed"}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting Ktor server: ${e.message}", e)
+            logManager.e(TAG, "Error starting Ktor server: ${e.message}", e)
             false
         }
     }
@@ -91,10 +93,10 @@ class WakeOnLanServiceImpl(
                 serverStarted = null
                 true
             }.also {
-                Log.d(TAG, "Ktor server stop attempt: success")
+                logManager.d(TAG, "Ktor server stop attempt: success")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping Ktor server: ${e.message}", e)
+            logManager.e(TAG, "Error stopping Ktor server: ${e.message}", e)
             false
         }
     }
@@ -109,10 +111,10 @@ class WakeOnLanServiceImpl(
                 serviceInfo.service.className == KtorServerService::class.java.name
             }
 
-            Log.d(TAG, "Ktor server running status: $isRunning")
+            logManager.d(TAG, "Ktor server running status: $isRunning")
             isRunning
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking Ktor server status: ${e.message}", e)
+            logManager.e(TAG, "Error checking Ktor server status: ${e.message}", e)
             false
         }
     }
@@ -148,11 +150,11 @@ class WakeOnLanServiceImpl(
             socket.close()
 
             val message = "Wake-on-LAN packet sent to ${serverData.macAddress} via broadcast"
-            Log.d(TAG, message)
+            logManager.d(TAG, message)
             Result.success(message)
         } catch (e: Exception) {
             val errorMessage = "Failed to send Wake-on-LAN packet: ${e.message}"
-            Log.e(TAG, errorMessage, e)
+            logManager.e(TAG, errorMessage, e)
             Result.failure(Exception(errorMessage, e))
         }
     }
@@ -167,11 +169,11 @@ class WakeOnLanServiceImpl(
             }
 
             val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
-            Log.d(TAG, message)
+            logManager.d(TAG, message)
             Result.success(message)
         } catch (e: Exception) {
             val errorMessage = "SSH connection failed to ${serverData.ipAddress}: ${e.message}"
-            Log.e(TAG, errorMessage, e)
+            logManager.e(TAG, errorMessage, e)
             Result.failure(Exception(errorMessage, e))
         }
     }

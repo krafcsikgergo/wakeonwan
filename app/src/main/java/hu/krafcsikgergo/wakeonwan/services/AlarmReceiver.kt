@@ -6,6 +6,8 @@ import android.content.Intent
 import android.util.Log
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManagerImpl
+import hu.krafcsikgergo.wakeonwan.services.LogManager
+import hu.krafcsikgergo.wakeonwan.services.LogManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.WakeOnLanService
@@ -18,40 +20,46 @@ import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
 
+    private lateinit var logManager: LogManager
+
     override fun onReceive(context: Context?, intent: Intent?) {
-        Log.d("AlarmReceiver", "onReceive called! context: $context, intent: $intent")
+        if (!::logManager.isInitialized) {
+            logManager = LogManagerImpl()
+        }
+        
+        logManager.d("AlarmReceiver", "onReceive called! context: $context, intent: $intent")
         
         try {
             context ?: return
 
             // Get application context for dependency resolution
-            val appContext = context.applyicationContext
+            val appContext = context.applicationContext
             
             when (intent?.action) {
                 "android.intent.action.BOOT_COMPLETED" -> {
-                    Log.d("AlarmReceiver", "Device booted, rescheduling alarms")
+                    logManager.d("AlarmReceiver", "Device booted, rescheduling alarms")
                     rescheduleAllAlarms(appContext)
                 }
 
                 "hu.krafcsikgergo.wakeonwan.ALARM_TRIGGER" -> {
                     // Regular alarm trigger
-                    val turnOn = intent?.getBooleanExtra("turnOn", true) ?: true
-                    val scheduleId = intent?.getIntExtra("scheduleId", -1) ?: -1
+                    val turnOn = intent.getBooleanExtra("turnOn", true)
+                    val scheduleId = intent.getIntExtra("scheduleId", -1)
 
-                    Log.d("AlarmReceiver", "Alarm triggered - turnOn: $turnOn, scheduleId: $scheduleId")
-                    Log.d("AlarmReceiver", "Intent extras: ${intent?.extras}")
+                    logManager.d("AlarmReceiver", "Alarm triggered - turnOn: $turnOn, scheduleId: $scheduleId")
+                    logManager.d("AlarmReceiver", "Intent extras: ${intent.extras}")
 
                     // Perform the action in a coroutine
                     val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
-                            Log.d("AlarmReceiver", "Starting performScheduledAction with turnOn: $turnOn")
+                            logManager.d("AlarmReceiver", "Starting performScheduledAction with turnOn: $turnOn")
                             performScheduledAction(appContext, turnOn)
                             // Reschedule the next weekly alarm
                             rescheduleNextAlarm(appContext, scheduleId)
-                            Log.d("AlarmReceiver", "Completed performScheduledAction and rescheduled next alarm")
+                            logManager.d("AlarmReceiver", "Completed performScheduledAction and rescheduled next alarm")
                         } catch (e: Exception) {
-                            Log.e("AlarmReceiver", "Error performing scheduled action", e)
+                            logManager.e("AlarmReceiver", "Error performing scheduled action", e)
                         } finally {
                             pendingResult.finish()
                         }
@@ -59,37 +67,38 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 else -> {
-                    Log.w("AlarmReceiver", "Unknown intent action: ${intent?.action}")
+                    logManager.w("AlarmReceiver", "Unknown intent action: ${intent?.action}")
                 }
             }
         } catch (e: Exception) {
-            Log.e("AlarmReceiver", "Error in onReceive", e)
+            logManager.e("AlarmReceiver", "Error in onReceive", e)
         }
     }
 
     private suspend fun performScheduledAction(context: Context, turnOn: Boolean) {
-        Log.d("AlarmReceiver", "performScheduledAction starting - turnOn: $turnOn")
+        logManager.d("AlarmReceiver", "performScheduledAction starting - turnOn: $turnOn")
         try {
             // Create services directly (BroadcastReceiver context has limitations with DI)
             val dataStoreManager = DataStoreManagerImpl(context)
-            val sshManager = SSHManagerImpl()
-            val wakeOnLanService = WakeOnLanServiceImpl(context, sshManager)
+            val logManager = LogManagerImpl()
+            val sshManager = SSHManagerImpl(logManager)
+            val wakeOnLanService = WakeOnLanServiceImpl(context, sshManager, logManager)
 
             val serverData = dataStoreManager.getServerData()
-            Log.d("AlarmReceiver", "Retrieved server data: $serverData")
+            logManager.d("AlarmReceiver", "Retrieved server data: $serverData")
 
             if (serverData == null) {
-                Log.e("AlarmReceiver", "Server data not found - cannot perform scheduled action")
+                logManager.e("AlarmReceiver", "Server data not found - cannot perform scheduled action")
                 return
             }
 
             if (turnOn) {
-                Log.d("AlarmReceiver", "Executing Wake-on-LAN for ${serverData.macAddress}")
+                logManager.d("AlarmReceiver", "Executing Wake-on-LAN for ${serverData.macAddress}")
                 val result = wakeOnLanService.sendWakeOnLanPacket(serverData)
                 result.fold(
-                    onSuccess = { message -> Log.d("AlarmReceiver", "WOL success: $message") },
+                    onSuccess = { message -> logManager.d("AlarmReceiver", "WOL success: $message") },
                     onFailure = { error ->
-                        Log.e(
+                        logManager.e(
                             "AlarmReceiver",
                             "WOL failed: ${error.message}",
                             error
@@ -97,12 +106,12 @@ class AlarmReceiver : BroadcastReceiver() {
                     }
                 )
             } else {
-                Log.d("AlarmReceiver", "Executing shutdown via SSH for ${serverData.ipAddress}")
+                logManager.d("AlarmReceiver", "Executing shutdown via SSH for ${serverData.ipAddress}")
                 val result = wakeOnLanService.executeShutdownCommand(serverData)
                 result.fold(
-                    onSuccess = { message -> Log.d("AlarmReceiver", "Shutdown success: $message") },
+                    onSuccess = { message -> logManager.d("AlarmReceiver", "Shutdown success: $message") },
                     onFailure = { error ->
-                        Log.e(
+                        logManager.e(
                             "AlarmReceiver",
                             "Shutdown failed: ${error.message}",
                             error
@@ -111,7 +120,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 )
             }
         } catch (e: Exception) {
-            Log.e("AlarmReceiver", "Failed to perform scheduled action", e)
+            logManager.e("AlarmReceiver", "Failed to perform scheduled action", e)
         }
     }
 
@@ -120,21 +129,22 @@ class AlarmReceiver : BroadcastReceiver() {
             try {
                 // Create services directly
                 val dataStoreManager = DataStoreManagerImpl(context)
-                val scheduleManager = ScheduleManagerImpl(dataStoreManager)
+                val logManager = LogManagerImpl()
+                val scheduleManager = ScheduleManagerImpl(dataStoreManager, logManager)
 
-                Log.d("AlarmReceiver", "Initializing schedules from DataStore via ScheduleManager")
+                logManager.d("AlarmReceiver", "Initializing schedules from DataStore via ScheduleManager")
                 val result = scheduleManager.initializeFromDataStore(context)
                 
                 result.fold(
                     onSuccess = {
-                        Log.d("AlarmReceiver", "Successfully rescheduled all alarms")
+                        logManager.d("AlarmReceiver", "Successfully rescheduled all alarms")
                     },
                     onFailure = { error ->
-                        Log.e("AlarmReceiver", "Failed to reschedule alarms after boot: ${error.message}", error)
+                        logManager.e("AlarmReceiver", "Failed to reschedule alarms after boot: ${error.message}", error)
                     }
                 )
             } catch (e: Exception) {
-                Log.e("AlarmReceiver", "Failed to reschedule alarms after boot", e)
+                logManager.e("AlarmReceiver", "Failed to reschedule alarms after boot", e)
             }
         }
     }
@@ -144,9 +154,10 @@ class AlarmReceiver : BroadcastReceiver() {
             try {
                 // Create services directly
                 val dataStoreManager = DataStoreManagerImpl(context)
-                val scheduleManager = ScheduleManagerImpl(dataStoreManager)
+                val logManager = LogManagerImpl()
+                val scheduleManager = ScheduleManagerImpl(dataStoreManager, logManager)
 
-                Log.d("AlarmReceiver", "Rescheduling next alarm for schedule: $scheduleId")
+                logManager.d("AlarmReceiver", "Rescheduling next alarm for schedule: $scheduleId")
                 
                 // Get the schedule and reschedule it for next week
                 val schedules = scheduleManager.getAllSchedules()
@@ -155,12 +166,12 @@ class AlarmReceiver : BroadcastReceiver() {
                 if (schedule != null) {
                     // The scheduleAlarms method will calculate the next occurrence automatically
                     scheduleManager.scheduleAlarms(context, listOf(schedule))
-                    Log.d("AlarmReceiver", "Successfully rescheduled next alarm for schedule $scheduleId")
+                    logManager.d("AlarmReceiver", "Successfully rescheduled next alarm for schedule $scheduleId")
                 } else {
-                    Log.w("AlarmReceiver", "Schedule $scheduleId not found for rescheduling")
+                    logManager.w("AlarmReceiver", "Schedule $scheduleId not found for rescheduling")
                 }
             } catch (e: Exception) {
-                Log.e("AlarmReceiver", "Failed to reschedule next alarm", e)
+                logManager.e("AlarmReceiver", "Failed to reschedule next alarm", e)
             }
         }
     }

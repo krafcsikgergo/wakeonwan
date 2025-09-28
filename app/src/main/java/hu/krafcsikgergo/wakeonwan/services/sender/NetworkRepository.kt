@@ -2,6 +2,7 @@ package hu.krafcsikgergo.wakeonwan.services.sender
 
 import android.util.Log
 import com.google.gson.Gson
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -46,41 +47,42 @@ interface NetworkRepository {
  * This implementation uses Ktor client for network communication.
  */
 class NetworkRepositoryImpl(
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val logManager: LogManager
 ) : NetworkRepository {
 
     override suspend fun wakeUpRemoteServer(baseUrl: String): Result<String> {
         return try {
-            Log.d("NetworkRepository", "Making wake-up request to: $baseUrl/wakeup")
+            logManager.d("NetworkRepository", "Making wake-up request to: $baseUrl/wakeup")
             val response = httpClient.get("$baseUrl/wakeup")
             val jsonResponse = response.bodyAsText()
 
-            Log.d("NetworkRepository", "Wake-up response: $jsonResponse")
-            Log.d("NetworkRepository", "Response status: ${response.status}")
+            logManager.d("NetworkRepository", "Wake-up response: $jsonResponse")
+            logManager.d("NetworkRepository", "Response status: ${response.status}")
 
             val message = parseResponseMessage(jsonResponse)
             Result.success(message)
 
         } catch (e: Exception) {
-            Log.e("NetworkRepository", "Wake-up error: ${e.message}", e)
+            logManager.e("NetworkRepository", "Wake-up error: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     override suspend fun shutDownRemoteServer(baseUrl: String): Result<String> {
         return try {
-            Log.d("NetworkRepository", "Making shutdown request to: $baseUrl/shutdown")
+            logManager.d("NetworkRepository", "Making shutdown request to: $baseUrl/shutdown")
             val response = httpClient.get("$baseUrl/shutdown")
             val jsonResponse = response.bodyAsText()
 
-            Log.d("NetworkRepository", "Shutdown response: $jsonResponse")
-            Log.d("NetworkRepository", "Response status: ${response.status}")
+            logManager.d("NetworkRepository", "Shutdown response: $jsonResponse")
+            logManager.d("NetworkRepository", "Response status: ${response.status}")
 
             val message = parseResponseMessage(jsonResponse)
             Result.success(message)
 
         } catch (e: Exception) {
-            Log.e("NetworkRepository", "Shutdown error: ${e.message}", e)
+            logManager.e("NetworkRepository", "Shutdown error: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -89,13 +91,13 @@ class NetworkRepositoryImpl(
         return try {
             val response = httpClient.get("$baseUrl/")
             val isHealthy = response.status.value in 200..299
-            Log.d(
+            logManager.d(
                 "NetworkRepository",
-                "Server health check: $isHealthy, response status: ${response.status}"
+                "Ktor Mobile server check: $isHealthy, response status: ${response.status}"
             )
             isHealthy
         } catch (e: Exception) {
-            Log.e("NetworkRepository", "Health check error: ${e.message}")
+            logManager.e("NetworkRepository", "Health check error: ${e.message}")
             false
         }
     }
@@ -104,13 +106,13 @@ class NetworkRepositoryImpl(
         return try {
             val response = httpClient.get("$baseUrl/test-server")
             val isHealthy = response.status.value in 200..299
-            Log.d(
+            logManager.d(
                 "NetworkRepository",
                 "Server status check: $isHealthy, response status: ${response.status}"
             )
             isHealthy
         } catch (e: Exception) {
-            Log.e("NetworkRepository", "Status check error: ${e.message}")
+            logManager.e("NetworkRepository", "Status check error: ${e.message}")
             false
         }
     }
@@ -129,7 +131,7 @@ class NetworkRepositoryImpl(
                 "Server response: $jsonResponse"
             }
         } catch (e: Exception) {
-            Log.w("NetworkRepository", "Failed to parse response as JSON: ${e.message}")
+            logManager.w("NetworkRepository", "Failed to parse response as JSON: ${e.message}")
             "Server response: $jsonResponse"
         }
     }

@@ -213,6 +213,10 @@ class SenderViewModel(
         testServerStatus()
     }
 
+    fun clearLastOperationMessage() {
+        uiState = uiState.copy(lastOperationMessage = null)
+    }
+
     /**
      * Constructs the base URL from the selected server configuration.
      * @return The base URL string (e.g., "http://192.168.1.100:8080")

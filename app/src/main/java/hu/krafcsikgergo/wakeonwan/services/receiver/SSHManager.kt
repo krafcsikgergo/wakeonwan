@@ -4,6 +4,7 @@ import android.util.Log
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -22,7 +23,9 @@ data class SshCommandResult(
     val exitStatus: Int? = null
 )
 
-class SSHManagerImpl() : SSHManager {
+class SSHManagerImpl(
+    private val logManager: LogManager
+) : SSHManager {
     private val TAG = "SSHManager"
 
     private suspend fun sshConnect(
@@ -72,9 +75,9 @@ class SSHManagerImpl() : SSHManager {
             val errorOutput = errorStream.toString()
             val exitStatus = channel.exitStatus
             
-            Log.d(TAG, "Command executed with exit status: $exitStatus")
+            logManager.d(TAG, "Command executed with exit status: $exitStatus")
             if (errorOutput.isNotEmpty()) {
-                Log.d(TAG, "Error output: $errorOutput")
+                logManager.d(TAG, "Error output: $errorOutput")
             }
             
             return SshCommandResult(
@@ -84,13 +87,13 @@ class SSHManagerImpl() : SSHManager {
             )
 
         } catch (e: JSchException) {
-            Log.e(TAG, "JSch connection error: ${e.message}", e)
+            logManager.e(TAG, "JSch connection error: ${e.message}", e)
             return SshCommandResult(false, error = e, exitStatus = -1)
         } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "SSH connection timeout: ${e.message}", e)
+            logManager.e(TAG, "SSH connection timeout: ${e.message}", e)
             return SshCommandResult(false, error = e, exitStatus = -1)
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected SSH error: ${e.message}", e)
+            logManager.e(TAG, "Unexpected SSH error: ${e.message}", e)
             return SshCommandResult(false, error = e, exitStatus = -1)
         } finally {
             // Always disconnect resources
@@ -98,7 +101,7 @@ class SSHManagerImpl() : SSHManager {
                 channel?.disconnect()
                 session?.disconnect()
             } catch (e: Exception) {
-                Log.w(TAG, "Error while disconnecting SSH resources: ${e.message}")
+                logManager.w(TAG, "Error while disconnecting SSH resources: ${e.message}")
             }
         }
     }
@@ -109,24 +112,24 @@ class SSHManagerImpl() : SSHManager {
         return try {
             // Create SSH session
             session = sshConnect(serverData)
-            Log.d(TAG, "SSH connection test successful")
+            logManager.d(TAG, "SSH connection test successful")
             true
 
         } catch (e: JSchException) {
-            Log.e(TAG, "SSH test connection failed: ${e.message}", e)
+            logManager.e(TAG, "SSH test connection failed: ${e.message}", e)
             false
         } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "SSH test connection timeout: ${e.message}", e)
+            logManager.e(TAG, "SSH test connection timeout: ${e.message}", e)
             false
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error during SSH test: ${e.message}", e)
+            logManager.e(TAG, "Unexpected error during SSH test: ${e.message}", e)
             false
         } finally {
             // Always disconnect session
             try {
                 session?.disconnect()
             } catch (e: Exception) {
-                Log.w(TAG, "Error while disconnecting SSH test session: ${e.message}")
+                logManager.w(TAG, "Error while disconnecting SSH test session: ${e.message}")
             }
         }
     }

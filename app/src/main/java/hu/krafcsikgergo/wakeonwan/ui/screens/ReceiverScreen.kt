@@ -2,6 +2,7 @@ package hu.krafcsikgergo.wakeonwan.ui.screens
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +50,7 @@ import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
-fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit) {
+fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) {
     val context = LocalContext.current
     val viewModel = koinViewModel<ReceiverViewModel>()
     val uiState = viewModel.uiState
@@ -58,8 +59,7 @@ fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit
     uiState.lastOperationMessage?.let { message ->
         LaunchedEffect(message) {
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
-            // Clear message after showing
-            viewModel.clearError() // Assuming this clears operation messages too
+            viewModel.clearLastOperationMessage()
         }
     }
 
@@ -75,7 +75,8 @@ fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit
         TopRow(
             title = "Receiver",
             switchToText = "Switch to Sender",
-            onNavigate = navigateToSender
+            onNavigate = navigateToSender,
+            onNavigateToLogs = navigateToLogs
         )
 
         Column(
@@ -377,9 +378,7 @@ fun ActionButtonsSection(
             modifier = Modifier.width(140.dp)
         )
     }
-}
-
-@Composable
+}@Composable
 fun ActionButton(
     onClick: () -> Unit,
     enabled: Boolean,

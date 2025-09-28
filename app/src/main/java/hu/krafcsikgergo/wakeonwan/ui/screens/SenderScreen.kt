@@ -60,7 +60,7 @@ import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SenderScreen(navigateToReceiver: () -> Unit) {
+fun SenderScreen(navigateToReceiver: () -> Unit, navigateToLogs: () -> Unit) {
     val context = LocalContext.current
     val viewModel = koinViewModel<SenderViewModel>()
     val uiState = viewModel.uiState
@@ -72,6 +72,7 @@ fun SenderScreen(navigateToReceiver: () -> Unit) {
     LaunchedEffect(uiState.lastOperationMessage) {
         uiState.lastOperationMessage?.let { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.clearLastOperationMessage()
         }
     }
 
@@ -87,7 +88,8 @@ fun SenderScreen(navigateToReceiver: () -> Unit) {
         TopRow(
             title = "Sender",
             switchToText = "Switch to Receiver",
-            onNavigate = navigateToReceiver
+            onNavigate = navigateToReceiver,
+            onNavigateToLogs = navigateToLogs
         )
 
         Column(

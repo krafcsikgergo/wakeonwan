@@ -7,6 +7,8 @@ import hu.krafcsikgergo.wakeonwan.services.sender.NetworkRepositoryImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.WakeOnLanServiceImpl
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManagerImpl
+import hu.krafcsikgergo.wakeonwan.services.LogManager
+import hu.krafcsikgergo.wakeonwan.services.LogManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
@@ -14,6 +16,7 @@ import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManagerImpl
 import hu.krafcsikgergo.wakeonwan.ui.screens.ReceiverViewModel
 import hu.krafcsikgergo.wakeonwan.ui.screens.SchedulesViewModel
 import hu.krafcsikgergo.wakeonwan.ui.screens.SenderViewModel
+import hu.krafcsikgergo.wakeonwan.ui.screens.LogViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -57,6 +60,7 @@ class WakeOnWanApplication : Application() {
 
                     // Service Dependencies
                     singleOf(::DataStoreManagerImpl).bind<DataStoreManager>()
+                    singleOf(::LogManagerImpl).bind<LogManager>()
                     singleOf(::NetworkRepositoryImpl).bind<NetworkRepository>()
                     singleOf(::WakeOnLanServiceImpl).bind<WakeOnLanService>()
                     singleOf(::SSHManagerImpl).bind<SSHManager>()
@@ -65,7 +69,8 @@ class WakeOnWanApplication : Application() {
                     // ViewModels
                     viewModelOf(::SenderViewModel)
                     viewModelOf(::ReceiverViewModel)
-                    viewModel { SchedulesViewModel(get(), get(), get()) }
+                    viewModelOf(::SchedulesViewModel)
+                    viewModelOf(::LogViewModel)
                 }
             )
         }

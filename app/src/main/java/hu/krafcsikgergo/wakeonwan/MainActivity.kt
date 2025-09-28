@@ -29,6 +29,7 @@ import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.ui.screens.ReceiverScreen
 import hu.krafcsikgergo.wakeonwan.ui.screens.SchedulesScreen
 import hu.krafcsikgergo.wakeonwan.ui.screens.SenderScreen
+import hu.krafcsikgergo.wakeonwan.ui.screens.LogScreen
 import hu.krafcsikgergo.wakeonwan.ui.theme.WakeOnWANTheme
 import org.koin.core.component.KoinComponent
 
@@ -116,6 +117,12 @@ fun NavHost(
                             inclusive = true
                         }
                     }
+                },
+                navigateToLogs = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Logs.route)
+                    }
+                    navController.navigate(NavigationItem.Logs.route)
                 }
             )
         }
@@ -140,6 +147,12 @@ fun NavHost(
                         dataStoreManager.saveLastPage(NavigationItem.Schedules.route)
                     }
                     navController.navigate(NavigationItem.Schedules.route)
+                },
+                navigateToLogs = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Logs.route)
+                    }
+                    navController.navigate(NavigationItem.Logs.route)
                 }
             )
         }
@@ -153,6 +166,15 @@ fun NavHost(
             }
         }
 
+        composable(
+            NavigationItem.Logs.route,
+            enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
+            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
+            LogScreen {
+                navController.popBackStack()
+            }
+        }
+
     }
 }
 
@@ -161,4 +183,5 @@ sealed class NavigationItem(val route: String) {
     object Sender : NavigationItem("sender")
     object Receiver : NavigationItem("receiver")
     object Schedules : NavigationItem("schedules")
+    object Logs : NavigationItem("logs")
 }

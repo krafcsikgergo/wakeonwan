@@ -223,6 +223,10 @@ class ReceiverViewModel(
         uiState = uiState.copy(errorMessage = null)
     }
 
+    fun clearLastOperationMessage() {
+        uiState = uiState.copy(lastOperationMessage = null)
+    }
+
     /**
      * Loads the initial configuration from repository.
      */
