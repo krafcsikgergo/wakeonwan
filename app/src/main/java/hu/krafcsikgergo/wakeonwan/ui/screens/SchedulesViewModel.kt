@@ -4,13 +4,13 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
 import kotlinx.coroutines.launch
@@ -23,7 +23,8 @@ import java.time.LocalTime
 class SchedulesViewModel(
     private val dataStoreManager: DataStoreManager,
     private val scheduleManager: ScheduleManager,
-    private val context: Context
+    private val context: Context,
+    private val logManager: LogManager
 ) : ViewModel() {
 
     // UI State
@@ -46,12 +47,12 @@ class SchedulesViewModel(
             uiState = uiState.copy(hasExactAlarmPermission = canScheduleExact)
             
             if (!canScheduleExact) {
-                Log.w("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission not granted")
+                logManager.w("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission not granted")
                 uiState = uiState.copy(
                     permissionWarning = "For precise scheduling, please grant 'Alarms & reminders' permission in Settings"
                 )
             } else {
-                Log.d("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission granted")
+                logManager.d("SchedulesViewModel", "SCHEDULE_EXACT_ALARM permission granted")
             }
         } else {
             // Pre-Android 12 doesn't need permission
@@ -69,9 +70,9 @@ class SchedulesViewModel(
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                Log.d("SchedulesViewModel", "Opened exact alarm permission settings")
+                logManager.d("SchedulesViewModel", "Opened exact alarm permission settings")
             } catch (e: Exception) {
-                Log.e("SchedulesViewModel", "Failed to open exact alarm permission settings", e)
+                logManager.e("SchedulesViewModel", "Failed to open exact alarm permission settings", e)
                 uiState = uiState.copy(
                     errorMessage = "Failed to open permission settings. Please go to Settings > Apps > Special app access > Alarms & reminders manually."
                 )
@@ -103,10 +104,10 @@ class SchedulesViewModel(
                 val schedules = scheduleManager.getAllSchedules()
                 if (schedules.isNotEmpty()) {
                     scheduleManager.scheduleAlarms(context, schedules)
-                    Log.d("SchedulesViewModel", "Re-scheduled ${schedules.size} alarms after permission change")
+                    logManager.d("SchedulesViewModel", "Re-scheduled ${schedules.size} alarms after permission change")
                 }
             } catch (e: Exception) {
-                Log.e("SchedulesViewModel", "Failed to reschedule alarms", e)
+                logManager.e("SchedulesViewModel", "Failed to reschedule alarms", e)
             }
         }
     }

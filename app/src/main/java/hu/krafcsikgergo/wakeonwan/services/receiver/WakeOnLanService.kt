@@ -120,61 +120,65 @@ class WakeOnLanServiceImpl(
     }
 
     override suspend fun sendWakeOnLanPacket(serverData: ServerData): Result<String> {
-        return try {
-            var delimiter = ":"
-            if (!serverData.macAddress.contains(":")) {
-                delimiter = "-"
+        return withContext(Dispatchers.IO) {
+            try {
+                var delimiter = ":"
+                if (!serverData.macAddress.contains(":")) {
+                    delimiter = "-"
+                }
+
+                // Convert the MAC address to bytes
+                val macBytes = serverData.macAddress.split(delimiter).map { it.toInt(16).toByte() }.toByteArray()
+
+                // Create a byte array for the magic packet
+                val magicPacket = ByteArray(6 + 16 * macBytes.size)
+                // Fill the first 6 bytes with 0xFF
+                for (i in 0 until 6) {
+                    magicPacket[i] = 0xFF.toByte()
+                }
+                // Repeat the MAC address 16 times
+                for (i in 6 until magicPacket.size) {
+                    magicPacket[i] = macBytes[i % 6]
+                }
+
+                // Create a DatagramPacket with the magic packet and broadcast address
+                val broadcastAddress = InetAddress.getByName("255.255.255.255")
+                val packet = DatagramPacket(magicPacket, magicPacket.size, broadcastAddress, 9)
+
+                // Create a DatagramSocket and send the packet
+                val socket = DatagramSocket()
+                socket.send(packet)
+                socket.close()
+
+                val message = "Wake-on-LAN packet sent to ${serverData.macAddress} via broadcast"
+                logManager.d(TAG, message)
+                Result.success(message)
+            } catch (e: Exception) {
+                val errorMessage = "Failed to send Wake-on-LAN packet: ${e.message}"
+                logManager.e(TAG, errorMessage, e)
+                Result.failure(Exception(errorMessage, e))
             }
-
-            // Convert the MAC address to bytes
-            val macBytes = serverData.macAddress.split(delimiter).map { it.toInt(16).toByte() }.toByteArray()
-
-            // Create a byte array for the magic packet
-            val magicPacket = ByteArray(6 + 16 * macBytes.size)
-            // Fill the first 6 bytes with 0xFF
-            for (i in 0 until 6) {
-                magicPacket[i] = 0xFF.toByte()
-            }
-            // Repeat the MAC address 16 times
-            for (i in 6 until magicPacket.size) {
-                magicPacket[i] = macBytes[i % 6]
-            }
-
-            // Create a DatagramPacket with the magic packet and broadcast address
-            val broadcastAddress = InetAddress.getByName("255.255.255.255")
-            val packet = DatagramPacket(magicPacket, magicPacket.size, broadcastAddress, 9)
-
-            // Create a DatagramSocket and send the packet
-            val socket = DatagramSocket()
-            socket.send(packet)
-            socket.close()
-
-            val message = "Wake-on-LAN packet sent to ${serverData.macAddress} via broadcast"
-            logManager.d(TAG, message)
-            Result.success(message)
-        } catch (e: Exception) {
-            val errorMessage = "Failed to send Wake-on-LAN packet: ${e.message}"
-            logManager.e(TAG, errorMessage, e)
-            Result.failure(Exception(errorMessage, e))
         }
     }
 
     override suspend fun executeShutdownCommand(serverData: ServerData): Result<String> {
-        return try {
-            val sshResult = sshManager.executeCommand(serverData, "sudo shutdown now")
+        return withContext(Dispatchers.IO) {
+            try {
+                val sshResult = sshManager.executeCommand(serverData, "sudo shutdown now")
 
-            if (!sshResult.success) {
-                throw sshResult.error
-                    ?: Exception("SSH command failed with exit status ${sshResult.exitStatus}")
+                if (!sshResult.success) {
+                    throw sshResult.error
+                        ?: Exception("SSH command failed with exit status ${sshResult.exitStatus}")
+                }
+
+                val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
+                logManager.d(TAG, message)
+                Result.success(message)
+            } catch (e: Exception) {
+                val errorMessage = "SSH connection failed to ${serverData.ipAddress}: ${e.message}"
+                logManager.e(TAG, errorMessage, e)
+                Result.failure(Exception(errorMessage, e))
             }
-
-            val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
-            logManager.d(TAG, message)
-            Result.success(message)
-        } catch (e: Exception) {
-            val errorMessage = "SSH connection failed to ${serverData.ipAddress}: ${e.message}"
-            logManager.e(TAG, errorMessage, e)
-            Result.failure(Exception(errorMessage, e))
         }
     }
 }

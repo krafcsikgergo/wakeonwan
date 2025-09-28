@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 import hu.krafcsikgergo.wakeonwan.services.AlarmReceiver
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.LogManager
@@ -13,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalTime
 import java.time.ZonedDateTime
-import java.time.temporal.ChronoField
 
 interface ScheduleManager {
     // CRUD operations
@@ -79,7 +77,7 @@ class ScheduleManagerImpl(
                 
                 // Save to DataStore
                 dataStoreManager.saveSchedule(newSchedule)
-                logManager.d("ScheduleManager", "Schedule ${newSchedule.id} created and saved to DataStore")
+                logManager.d("ScheduleManager", "Schedule ${newSchedule.id} created")
                 
                 Result.success(newSchedule)
             } catch (e: Exception) {
@@ -126,7 +124,7 @@ class ScheduleManagerImpl(
                 dataStoreManager.removeSchedule(scheduleId)
                 dataStoreManager.saveSchedule(updatedSchedule)
 
-                logManager.d("ScheduleManager", "Schedule $scheduleId updated in DataStore")
+                logManager.d("ScheduleManager", "Schedule $scheduleId updated")
 
                 Result.success(updatedSchedule)
             } catch (e: Exception) {
@@ -150,7 +148,7 @@ class ScheduleManagerImpl(
                 // Remove from DataStore
                 dataStoreManager.removeSchedule(scheduleId)
                 
-                logManager.d("ScheduleManager", "Schedule $scheduleId deleted from DataStore")
+                logManager.d("ScheduleManager", "Schedule $scheduleId deleted")
                 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -163,15 +161,12 @@ class ScheduleManagerImpl(
     override suspend fun initializeFromDataStore(context: Context): Result<Unit> {
         return withContext(Dispatchers.IO) {
             try {
-                logManager.d("ScheduleManager", "Initializing schedules from DataStore")
                 val schedules = dataStoreManager.getSchedules()
                 
                 if (schedules.isEmpty()) {
-                    logManager.d("ScheduleManager", "No schedules found to initialize")
                     return@withContext Result.success(Unit)
                 }
                 
-                logManager.d("ScheduleManager", "Scheduling ${schedules.size} alarms from DataStore")
                 scheduleAlarms(context, schedules)
                 
                 Result.success(Unit)
@@ -192,16 +187,12 @@ class ScheduleManagerImpl(
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val canScheduleExact = alarmManager.canScheduleExactAlarms()
             
-            if (canScheduleExact) {
-                logManager.d("ScheduleManager", "SCHEDULE_EXACT_ALARM permission granted - using exact alarms")
-            } else {
+            if (!canScheduleExact) {
                 logManager.w("ScheduleManager", "SCHEDULE_EXACT_ALARM permission denied - using inexact alarms as fallback")
-                logManager.i("ScheduleManager", "To enable exact alarms, go to Settings > Apps > Special app access > Alarms & reminders")
             }
             
             return canScheduleExact
         } else {
-            logManager.d("ScheduleManager", "Android < 12 - exact alarms available without permission")
             return true
         }
     }
@@ -211,14 +202,10 @@ class ScheduleManagerImpl(
         
         // Check permission status upfront for user awareness
         val hasExactPermission = checkExactAlarmPermission(context)
-        if (!hasExactPermission) {
-            logManager.w("ScheduleManager", "Proceeding with inexact alarms - schedules may be less precise")
-        }
         
         schedules.forEach { schedule ->
             // Skip disabled schedules
             if (!schedule.enabled) {
-                logManager.d("ScheduleManager", "Skipping disabled schedule ${schedule.id}")
                 return@forEach
             }
             
@@ -236,8 +223,6 @@ class ScheduleManagerImpl(
             // Create separate alarm for each enabled day
             schedule.days.forEachIndexed { dayIndex, isEnabled ->
                 if (isEnabled) {
-                    val dayName = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[dayIndex]
-                    logManager.d("ScheduleManager", "Scheduling alarm for schedule ${schedule.id} on $dayName at ${schedule.timeInLocalTime}")
                     
                     // Create unique request code with safety checks
                     val requestCode = generateSafeRequestCode(schedule.id, dayIndex)
@@ -260,7 +245,6 @@ class ScheduleManagerImpl(
 
                     // Calculate the next occurrence of this specific day/time
                     val nextAlarmTime = calculateNextAlarmTimeForDay(schedule, dayIndex)
-                    logManager.d("ScheduleManager", "Next alarm time for $dayName: $nextAlarmTime (${java.util.Date(nextAlarmTime)})")
 
                     // Schedule weekly repeating alarm for this specific day
                     scheduleWeeklyAlarm(context, nextAlarmTime, pendingIntent)
@@ -289,27 +273,18 @@ class ScheduleManagerImpl(
         // Cancel the existing alarm if it exists
         alarmManager.cancel(pendingIntent)
 
-        // Weekly interval in milliseconds (7 days)
-        val weeklyInterval = 7L * 24L * 60L * 60L * 1000L
-
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (alarmManager.canScheduleExactAlarms()) {
-                    logManager.d("ScheduleManager", "Scheduling exact weekly alarm with setExactAndAllowWhileIdle")
                     // Use setExactAndAllowWhileIdle for better reliability than setRepeating
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
-                    logManager.d("ScheduleManager", "Exact alarm scheduled successfully")
                 } else {
-                    logManager.w("ScheduleManager", "SCHEDULE_EXACT_ALARM permission denied, falling back to inexact alarm")
                     // Fall back to inexact alarm - will be less precise but still functional
                     alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
-                    logManager.d("ScheduleManager", "Inexact alarm scheduled as fallback")
                 }
             } else {
-                logManager.d("ScheduleManager", "Scheduling exact alarm (Android < 12)")
                 // For older Android versions, setExact is still available
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
-                logManager.d("ScheduleManager", "Exact alarm scheduled successfully")
             }
         } catch (e: SecurityException) {
             logManager.e("ScheduleManager", "SecurityException when scheduling alarm, falling back to inexact", e)
@@ -321,7 +296,6 @@ class ScheduleManagerImpl(
                     AlarmManager.INTERVAL_DAY * 7,
                     pendingIntent
                 )
-                logManager.d("ScheduleManager", "Inexact alarm scheduled as security fallback")
             } catch (fallbackException: Exception) {
                 logManager.e("ScheduleManager", "Failed to schedule any alarm - both exact and inexact failed", fallbackException)
             }
@@ -336,7 +310,6 @@ class ScheduleManagerImpl(
      */
     private fun calculateNextAlarmTimeForDay(schedule: Schedule, targetDayIndex: Int): Long {
         val now = ZonedDateTime.now()
-        logManager.d("ScheduleManager", "Calculating next alarm time - Current: $now, Target day: $targetDayIndex")
         
         // Get current day of week (Monday = 1, Sunday = 7) and convert to our index (Monday = 0, Sunday = 6)
         val currentDayIndex = now.dayOfWeek.value - 1
@@ -352,10 +325,8 @@ class ScheduleManagerImpl(
             targetDayIndex < currentDayIndex -> 7 - (currentDayIndex - targetDayIndex)
             else -> { // targetDayIndex == currentDayIndex (today)
                 if (todayAlarmTime.isAfter(now)) {
-                    logManager.d("ScheduleManager", "Target time is later today")
                     0
                 } else {
-                    logManager.d("ScheduleManager", "Target time has passed today, scheduling for next week")
                     7
                 }
             }
@@ -363,8 +334,6 @@ class ScheduleManagerImpl(
         
         val targetAlarmTime = todayAlarmTime.plusDays(daysUntilTarget.toLong())
         val epochMilli = targetAlarmTime.toInstant().toEpochMilli()
-        
-        logManager.d("ScheduleManager", "Target alarm time: $targetAlarmTime ($epochMilli)")
         
         // Validate that the calculated time is in the future
         if (epochMilli <= System.currentTimeMillis()) {
@@ -376,7 +345,7 @@ class ScheduleManagerImpl(
     }
 
     override fun cancelAlarm(context: Context, scheduleId: Int) {
-        logManager.d("ScheduleManager", "Cancelling all alarms for schedule: $scheduleId")
+        logManager.d("ScheduleManager", "Cancelling alarms for schedule: $scheduleId")
         
         // Cancel alarms for all possible days (0-6) using the same logic as scheduling
         for (dayIndex in 0..6) {
@@ -397,9 +366,6 @@ class ScheduleManagerImpl(
                 val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 alarmManager.cancel(pendingIntent)
                 pendingIntent.cancel()
-                logManager.d("ScheduleManager", "Cancelled alarm for schedule $scheduleId, day $dayIndex (requestCode: $requestCode)")
-            } else {
-                logManager.d("ScheduleManager", "No alarm found for schedule $scheduleId, day $dayIndex")
             }
         }
     }

@@ -12,6 +12,10 @@ import hu.krafcsikgergo.wakeonwan.services.sender.KtorServerData
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
+// DataStore instances - declared at top level to ensure singleton behavior
+private val Context.commonDataStore: DataStore<Preferences> by preferencesDataStore(name = "common")
+private val Context.receiverDataStore: DataStore<Preferences> by preferencesDataStore(name = "receiver")
+private val Context.senderDataStore: DataStore<Preferences> by preferencesDataStore(name = "sender")
 
 interface DataStoreManager {
     suspend fun saveLastPage(page: String)
@@ -35,10 +39,7 @@ class DataStoreManagerImpl(
     private val TAG = "DataStoreManager"
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val Context.commonDataStore: DataStore<Preferences> by preferencesDataStore(name = "common")
-    private val Context.receiverDataStore: DataStore<Preferences> by preferencesDataStore(name = "receiver")
-    private val Context.senderDataStore: DataStore<Preferences> by preferencesDataStore(name = "sender")
-    
+    // Access the top-level DataStore instances
     private val commonDataStore: DataStore<Preferences> get() = context.commonDataStore
     private val receiverDataStore: DataStore<Preferences> get() = context.receiverDataStore
     private val senderDataStore: DataStore<Preferences> get() = context.senderDataStore

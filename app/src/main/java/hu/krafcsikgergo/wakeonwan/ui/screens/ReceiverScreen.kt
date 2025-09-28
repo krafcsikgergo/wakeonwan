@@ -104,7 +104,9 @@ fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit
                 NetworkConfigurationSection(
                     serverData = uiState.serverData,
                     onIpAddressChange = { viewModel.updateServerIpAddress(it) },
-                    onMacAddressChange = { viewModel.updateMacAddress(it) }
+                    onMacAddressChange = { viewModel.updateMacAddress(it) },
+                    onTestWakeOnLanClick = { viewModel.sendTestWakeOnLanPacket() },
+                    isTestWakeOnLanInProgress = uiState.isTestWakeOnLanInProgress
                 )
 
                 SSHConfigurationSection(
@@ -116,12 +118,18 @@ fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit
                         }
                     },
                     onUsernameChange = { viewModel.updateUsername(it) },
-                    onPasswordChange = { viewModel.updatePassword(it) }
+                    onPasswordChange = { viewModel.updatePassword(it) },
+                    onTestSshClick = { viewModel.testSshConnection() },
+                    isTestSshInProgress = uiState.isTestSshInProgress
                 )
 
-                // Start Server Button
-                ActionButton(
-                    onClick = {
+            }
+
+            // Action Buttons Section
+            ActionButtonsSection(
+                onSchedulesClick = navigateToSchedules,
+                onStartServerClick = if (!uiState.isKtorServerRunning) {
+                    {
                         // Stop any running instance of KtorServerService
                         val stopIntent = Intent(context, KtorServerService::class.java)
                         context.stopService(stopIntent)
@@ -131,22 +139,9 @@ fun ReceiverScreen(navigateToSender: () -> Unit, navigateToSchedules: () -> Unit
                         context.startService(intent)
 
                         viewModel.startKtorServer()
-                    },
-                    enabled = !uiState.isKtorServerOperationInProgress,
-                    icon = Icons.Default.PlayArrow,
-                    text = if (uiState.isKtorServerOperationInProgress) "Starting..." else "Start Server",
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    isLoading = uiState.isKtorServerOperationInProgress,
-                    modifier = Modifier.width(200.dp)
-                )
-            }
-
-            // Action Buttons Section
-            ActionButtonsSection(
-                onSchedulesClick = navigateToSchedules,
-                onTestWakeOnLanClick = { viewModel.sendTestWakeOnLanPacket() },
-                isTestWakeOnLanInProgress = uiState.isTestWakeOnLanInProgress
+                    }
+                } else null,
+                isStartServerInProgress = uiState.isKtorServerOperationInProgress
             )
         }
     }
@@ -261,7 +256,9 @@ fun ServerRunningSection(
 fun NetworkConfigurationSection(
     serverData: hu.krafcsikgergo.wakeonwan.services.receiver.ServerData,
     onIpAddressChange: (String) -> Unit,
-    onMacAddressChange: (String) -> Unit
+    onMacAddressChange: (String) -> Unit,
+    onTestWakeOnLanClick: () -> Unit,
+    isTestWakeOnLanInProgress: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -275,12 +272,35 @@ fun NetworkConfigurationSection(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Network Configuration",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // Header row with title and test button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Network Configuration",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Button(
+                    onClick = onTestWakeOnLanClick,
+                    enabled = !isTestWakeOnLanInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary
+                    ),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    if (isTestWakeOnLanInProgress) {
+                        Text("Testing...", style = MaterialTheme.typography.labelSmall)
+                    } else {
+                        Text("Test WOL", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             
             IPTextField(
                 ipAddress = serverData.ipAddress,
@@ -300,7 +320,9 @@ fun SSHConfigurationSection(
     serverData: hu.krafcsikgergo.wakeonwan.services.receiver.ServerData,
     onPortChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
-    onPasswordChange: (String) -> Unit
+    onPasswordChange: (String) -> Unit,
+    onTestSshClick: () -> Unit,
+    isTestSshInProgress: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -314,12 +336,35 @@ fun SSHConfigurationSection(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "SSH Configuration",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // Header row with title and test button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "SSH Configuration",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Button(
+                    onClick = onTestSshClick,
+                    enabled = !isTestSshInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary
+                    ),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    if (isTestSshInProgress) {
+                        Text("Testing...", style = MaterialTheme.typography.labelSmall)
+                    } else {
+                        Text("Test SSH", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             
             PortTextField(
                 port = serverData.sshPort.toString(),
@@ -350,13 +395,26 @@ fun SSHConfigurationSection(
 @Composable
 fun ActionButtonsSection(
     onSchedulesClick: () -> Unit,
-    onTestWakeOnLanClick: () -> Unit,
-    isTestWakeOnLanInProgress: Boolean
+    onStartServerClick: (() -> Unit)? = null,
+    isStartServerInProgress: Boolean = false
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = if (onStartServerClick != null) Arrangement.SpaceEvenly else Arrangement.Center
     ) {
+        if (onStartServerClick != null) {
+            ActionButton(
+                onClick = onStartServerClick,
+                enabled = !isStartServerInProgress,
+                icon = Icons.Default.PlayArrow,
+                text = if (isStartServerInProgress) "Starting..." else "Start Server",
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                isLoading = isStartServerInProgress,
+                modifier = Modifier.width(140.dp)
+            )
+        }
+        
         ActionButton(
             onClick = onSchedulesClick,
             enabled = true,
@@ -364,17 +422,6 @@ fun ActionButtonsSection(
             text = "Schedules",
             containerColor = MaterialTheme.colorScheme.secondary,
             contentColor = MaterialTheme.colorScheme.onSecondary,
-            modifier = Modifier.width(140.dp)
-        )
-        
-        ActionButton(
-            onClick = onTestWakeOnLanClick,
-            enabled = !isTestWakeOnLanInProgress,
-            icon = Icons.Default.Send,
-            text = "Test WOL",
-            containerColor = MaterialTheme.colorScheme.tertiary,
-            contentColor = MaterialTheme.colorScheme.onTertiary,
-            isLoading = isTestWakeOnLanInProgress,
             modifier = Modifier.width(140.dp)
         )
     }

@@ -1,14 +1,15 @@
 package hu.krafcsikgergo.wakeonwan.ui.screens
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.ServerData
 import hu.krafcsikgergo.wakeonwan.services.receiver.WakeOnLanService
+import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManager
 import kotlinx.coroutines.launch
 
 /**
@@ -17,7 +18,9 @@ import kotlinx.coroutines.launch
  */
 class ReceiverViewModel(
     private val dataStoreManager: DataStoreManager,
-    private val wakeOnLanService: WakeOnLanService
+    private val wakeOnLanService: WakeOnLanService,
+    private val sshManager: SSHManager,
+    private val logManager: LogManager
 ) : ViewModel() {
 
     // UI State
@@ -37,7 +40,7 @@ class ReceiverViewModel(
         try {
             dataStoreManager.saveServerData(serverData)
         } catch (e: Exception) {
-            Log.e("ReceiverViewModel", "Error saving server data", e)
+            logManager.e("ReceiverViewModel", "Error saving server data", e)
             updateErrorState("Failed to save server configuration: ${e.message}")
         }
     }
@@ -108,7 +111,7 @@ class ReceiverViewModel(
                 val success = wakeOnLanService.startKtorServer()
                 if (success) {
                     val serverStarted = wakeOnLanService.serverStarted
-                    Log.d("ReceiverViewModel", "Server started successfully. Timestamp: $serverStarted")
+                    logManager.d("ReceiverViewModel", "Server started successfully. Timestamp: $serverStarted")
                     uiState = uiState.copy(
                         isKtorServerRunning = true,
                         isKtorServerOperationInProgress = false,
@@ -170,7 +173,7 @@ class ReceiverViewModel(
             try {
                 val isRunning = wakeOnLanService.isKtorServerRunning()
                 val serverStarted = wakeOnLanService.serverStarted
-                Log.d("ReceiverViewModel", "Server status check - Running: $isRunning, Started: $serverStarted")
+                logManager.d("ReceiverViewModel", "Server status check - Running: $isRunning, Started: $serverStarted")
                 uiState = uiState.copy(
                     isKtorServerRunning = isRunning,
                     serverStarted = serverStarted,
@@ -191,6 +194,9 @@ class ReceiverViewModel(
         uiState = uiState.copy(isTestWakeOnLanInProgress = true)
         viewModelScope.launch {
             try {
+                val mac = uiState.serverData.macAddress
+                logManager.d("ReceiverViewModel", "Sending Wake-on-LAN packet to MAC: $mac")
+
                 val result = wakeOnLanService.sendWakeOnLanPacket(uiState.serverData)
                 result.fold(
                     onSuccess = { message ->
@@ -217,6 +223,38 @@ class ReceiverViewModel(
     }
 
     /**
+     * Tests the SSH connection using the current server configuration.
+     */
+    fun testSshConnection() {
+        if (!isSshConfigValid()) return
+
+        uiState = uiState.copy(isTestSshInProgress = true)
+        viewModelScope.launch {
+            try {
+
+                val success = sshManager.testConnection(uiState.serverData)
+                uiState = if (success) {
+                    uiState.copy(
+                        isTestSshInProgress = false,
+                        lastOperationMessage = "SSH connection test successful",
+                        errorMessage = null
+                    )
+                } else {
+                    uiState.copy(
+                        isTestSshInProgress = false,
+                        errorMessage = "SSH connection test failed"
+                    )
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(
+                    isTestSshInProgress = false,
+                    errorMessage = "SSH connection test error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
      * Clears any error messages.
      */
     fun clearError() {
@@ -236,6 +274,7 @@ class ReceiverViewModel(
                 val serverData = dataStoreManager.getServerData() ?: return@launch
                 uiState = uiState.copy(serverData = serverData)
             } catch (e: Exception) {
+                logManager.e("ReceiverViewModel", "Error loading configuration", e)
                 updateErrorState("Failed to load configuration: ${e.message}")
             }
         }
@@ -250,6 +289,19 @@ class ReceiverViewModel(
                 uiState.serverData.macAddress != "00:00:00:00:00:00"
         if (!isValid) {
             updateErrorState("Invalid Wake-on-LAN configuration: Please check IP and MAC address")
+        }
+        return isValid
+    }
+
+    /**
+     * Validates if the SSH configuration is valid.
+     */
+    private fun isSshConfigValid(): Boolean {
+        val isValid = uiState.serverData.ipAddress.isNotBlank() &&
+                uiState.serverData.username.isNotBlank() &&
+                uiState.serverData.password.isNotBlank()
+        if (!isValid) {
+            updateErrorState("Invalid SSH configuration: Please check IP address, username, and password")
         }
         return isValid
     }
@@ -276,6 +328,7 @@ data class ReceiverUiState(
     val isKtorServerRunning: Boolean = false,
     val isKtorServerOperationInProgress: Boolean = false,
     val isTestWakeOnLanInProgress: Boolean = false,
+    val isTestSshInProgress: Boolean = false,
     val lastOperationMessage: String? = null,
     val errorMessage: String? = null,
     val serverStarted: Long? = null
