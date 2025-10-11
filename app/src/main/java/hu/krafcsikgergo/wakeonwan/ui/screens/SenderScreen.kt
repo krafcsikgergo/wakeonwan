@@ -20,7 +20,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,7 +63,11 @@ import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SenderScreen(navigateToReceiver: () -> Unit, navigateToLogs: () -> Unit) {
+fun SenderScreen(
+    navigateToReceiver: () -> Unit, 
+    navigateToLogs: () -> Unit,
+    navigateToSchedules: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     val viewModel = koinViewModel<SenderViewModel>()
     val uiState = viewModel.uiState
@@ -129,6 +136,15 @@ fun SenderScreen(navigateToReceiver: () -> Unit, navigateToLogs: () -> Unit) {
                 serverStatus = uiState.serverStatus,
                 onKtorStatusCheck = { viewModel.testKtorServerStatus() },
                 onServerStatusCheck = { viewModel.testServerStatus() }
+            )
+
+            // Schedules Management Button
+            ManageSchedulesButton(
+                serverName = uiState.selectedKtorServer.name,
+                enabled = uiState.selectedKtorServer.ipAddress.isNotEmpty(),
+                onClick = {
+                    navigateToSchedules(uiState.selectedKtorServer.id)
+                }
             )
         }
     }
@@ -630,4 +646,63 @@ fun AddServerDialog(
             }
         }
     )
+}
+
+@Composable
+fun ManageSchedulesButton(
+    serverName: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Manage Schedules",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = "Configure wake/sleep schedules for $serverName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Button(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(
+                    Icons.Default.Schedule,
+                    contentDescription = "Manage Schedules",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Open Schedules")
+            }
+        }
+    }
 }

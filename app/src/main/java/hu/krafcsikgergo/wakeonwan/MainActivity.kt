@@ -22,9 +22,11 @@ import androidx.compose.ui.Modifier
 import kotlinx.coroutines.launch
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.ui.screens.ReceiverScreen
 import hu.krafcsikgergo.wakeonwan.ui.screens.SchedulesScreen
@@ -123,6 +125,9 @@ fun NavHost(
                         dataStoreManager.saveLastPage(NavigationItem.Logs.route)
                     }
                     navController.navigate(NavigationItem.Logs.route)
+                },
+                navigateToSchedules = { serverId ->
+                    navController.navigate("${NavigationItem.Schedules.route}?mode=sender&serverId=$serverId")
                 }
             )
         }
@@ -146,7 +151,7 @@ fun NavHost(
                     coroutineScope.launch {
                         dataStoreManager.saveLastPage(NavigationItem.Schedules.route)
                     }
-                    navController.navigate(NavigationItem.Schedules.route)
+                    navController.navigate("${NavigationItem.Schedules.route}?mode=receiver")
                 },
                 navigateToLogs = {
                     coroutineScope.launch {
@@ -158,12 +163,30 @@ fun NavHost(
         }
 
         composable(
-            NavigationItem.Schedules.route,
+            route = "${NavigationItem.Schedules.route}?mode={mode}&serverId={serverId}",
+            arguments = listOf(
+                navArgument("mode") {
+                    type = NavType.StringType
+                    defaultValue = "receiver"
+                },
+                navArgument("serverId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
-            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            SchedulesScreen {
-                navController.popBackStack()
-            }
+            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) { backStackEntry ->
+            val mode = backStackEntry.arguments?.getString("mode") ?: "receiver"
+            val serverId = backStackEntry.arguments?.getString("serverId")
+            
+            SchedulesScreen(
+                mode = mode,
+                serverId = serverId,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
         }
 
         composable(

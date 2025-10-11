@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,14 +32,22 @@ import org.koin.androidx.compose.koinViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SchedulesScreen(onBack: () -> Unit) {
+fun SchedulesScreen(
+    mode: String = "receiver",
+    serverId: String? = null,
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
     val viewModel = koinViewModel<SchedulesViewModel>()
     val uiState = viewModel.uiState
 
     // Dialog state
     var showAddScheduleDialog by remember { mutableStateOf(false) }
+    
+    // Pull-to-refresh state
+    val pullToRefreshState = rememberPullToRefreshState()
 
     // Handle toast messages
     uiState.lastOperationMessage?.let { message ->
@@ -57,15 +67,21 @@ fun SchedulesScreen(onBack: () -> Unit) {
         }
     }
 
-    // Load schedules when screen first loads
-    LaunchedEffect(Unit) {
-        viewModel.loadSchedules()
+    // Initialize ViewModel with mode and serverId
+    LaunchedEffect(mode, serverId) {
+        viewModel.initialize(mode, serverId)
     }
 
     Scaffold(
         topBar = {
+            val title = if (uiState.mode == "sender" && uiState.serverName != null) {
+                "Schedules - ${uiState.serverName}"
+            } else {
+                "Schedules"
+            }
+            
             TopRow(
-                title = "Schedules",
+                title = title,
                 switchToText = "Go back",
                 onNavigate = onBack,
                 icon = Icons.Default.ArrowBack
@@ -85,24 +101,35 @@ fun SchedulesScreen(onBack: () -> Unit) {
             }
         }
     ) { paddingValues ->
-        Column(
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoading,
+            onRefresh = {
+                viewModel.loadSchedules()
+            },
+            state = pullToRefreshState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 20.dp)
         ) {
-            if (uiState.schedules.isEmpty()) {
-                EmptySchedulesState()
-            } else {
-                SchedulesList(
-                    schedules = uiState.schedules,
-                    onDeleteSchedule = { schedule ->
-                        viewModel.deleteSchedule(schedule.id)
-                    },
-                    onToggleSchedule = { scheduleId ->
-                        viewModel.toggleScheduleEnabled(scheduleId)
-                    }
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp)
+            ) {
+                if (uiState.schedules.isEmpty()) {
+                    EmptySchedulesState()
+                } else {
+                    SchedulesList(
+                        schedules = uiState.schedules,
+                        mode = uiState.mode,
+                        onDeleteSchedule = { schedule ->
+                            viewModel.deleteSchedule(schedule.id)
+                        },
+                        onToggleSchedule = { scheduleId ->
+                            viewModel.toggleScheduleEnabled(scheduleId)
+                        }
+                    )
+                }
             }
         }
     }
@@ -158,6 +185,7 @@ fun EmptySchedulesState() {
 @Composable
 fun SchedulesList(
     schedules: List<Schedule>,
+    mode: String,
     onDeleteSchedule: (Schedule) -> Unit,
     onToggleSchedule: (Int) -> Unit
 ) {
@@ -169,6 +197,7 @@ fun SchedulesList(
         items(schedules) { schedule ->
             ScheduleCard(
                 schedule = schedule,
+                mode = mode,
                 onDelete = { onDeleteSchedule(schedule) },
                 onToggleEnabled = { onToggleSchedule(schedule.id) }
             )
@@ -180,6 +209,7 @@ fun SchedulesList(
 @Composable
 fun ScheduleCard(
     schedule: Schedule,
+    mode: String,
     onDelete: () -> Unit,
     onToggleEnabled: () -> Unit
 ) {
@@ -297,7 +327,7 @@ fun ScheduleCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Enable/Disable row
+            // Enable/Disable row (works in both receiver and sender modes)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,

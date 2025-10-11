@@ -13,16 +13,21 @@ import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.LogManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.Schedule
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
+import hu.krafcsikgergo.wakeonwan.services.sender.KtorServerData
+import hu.krafcsikgergo.wakeonwan.services.sender.NetworkRepository
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 
 /**
  * ViewModel for the Schedules screen that manages scheduled operations.
- * Handles creation, editing, and deletion of wake/sleep schedules.
+ * Supports two modes:
+ * - Receiver mode: Manages local schedules using ScheduleManager
+ * - Sender mode: Manages remote schedules via HTTP using NetworkRepository
  */
 class SchedulesViewModel(
     private val dataStoreManager: DataStoreManager,
     private val scheduleManager: ScheduleManager,
+    private val networkRepository: NetworkRepository,
     private val context: Context,
     private val logManager: LogManager
 ) : ViewModel() {
@@ -31,9 +36,86 @@ class SchedulesViewModel(
     var uiState by mutableStateOf(SchedulesUiState())
         private set
 
-    init {
-        loadSchedules()
-        checkAlarmPermissionStatus()
+    /**
+     * Initializes the ViewModel with the specified mode and optional server ID.
+     * Must be called before using the ViewModel.
+     */
+    fun initialize(mode: String, serverId: String?) {
+        viewModelScope.launch {
+            if (mode == "sender" && serverId != null) {
+                // Load server configuration
+                val servers = dataStoreManager.getKtorServers()
+                val server = servers.find { it.id == serverId }
+                
+                if (server == null) {
+                    uiState = uiState.copy(
+                        errorMessage = "Server not found",
+                        mode = mode
+                    )
+                    return@launch
+                }
+                
+                uiState = uiState.copy(
+                    mode = mode,
+                    serverName = server.name,
+                    targetServer = server
+                )
+                logManager.d("SchedulesViewModel", "Initialized in sender mode for server: ${server.name}")
+            } else {
+                uiState = uiState.copy(mode = mode)
+                checkAlarmPermissionStatus()
+                logManager.d("SchedulesViewModel", "Initialized in receiver mode")
+            }
+            
+            loadSchedules()
+        }
+    }
+
+    /**
+     * Helper function to get the server's base URL.
+     * Returns null if server is not configured and updates error state.
+     */
+    private fun getServerBaseUrl(): String? {
+        val server = uiState.targetServer
+        if (server == null) {
+            uiState = uiState.copy(
+                isLoading = false,
+                errorMessage = "Server configuration not found"
+            )
+            return null
+        }
+        return "http://${server.ipAddress}:${server.port}"
+    }
+
+    /**
+     * Helper function to execute server operations with consistent error handling.
+     * @param operationName A human-readable name for the operation (e.g., "load schedules")
+     * @param operation The suspend function that performs the HTTP operation
+     * @param onSuccess A function that creates the new UI state from the operation result
+     * @return true if operation succeeded, false otherwise
+     */
+    private suspend fun <T> executeServerOperation(
+        operationName: String,
+        operation: suspend (String) -> Result<T>,
+        onSuccess: (T) -> SchedulesUiState
+    ): Boolean {
+        val baseUrl = getServerBaseUrl() ?: return false
+        
+        val result = operation(baseUrl)
+        result.fold(
+            onSuccess = { data ->
+                uiState = onSuccess(data)
+                logManager.d("SchedulesViewModel", "Successfully completed: $operationName")
+            },
+            onFailure = { error ->
+                uiState = uiState.copy(
+                    isLoading = false,
+                    errorMessage = "Failed to $operationName: ${error.message}"
+                )
+                logManager.e("SchedulesViewModel", "Failed to $operationName: ${error.message}")
+            }
+        )
+        return result.isSuccess
     }
 
     /**
@@ -114,27 +196,48 @@ class SchedulesViewModel(
 
     /**
      * Loads all schedules from the configuration.
+     * Uses local ScheduleManager in receiver mode or NetworkRepository in sender mode.
      */
     fun loadSchedules() {
         viewModelScope.launch {
             try {
                 uiState = uiState.copy(isLoading = true, errorMessage = null)
-                val schedules = scheduleManager.getAllSchedules()
-                uiState = uiState.copy(
-                    schedules = schedules,
-                    isLoading = false
-                )
+                
+                if (uiState.mode == "receiver") {
+                    // Receiver mode: Load from local ScheduleManager
+                    val schedules = scheduleManager.getAllSchedules()
+                    // Create a new list instance to ensure Compose detects the change
+                    uiState = uiState.copy(
+                        schedules = schedules.toList(),
+                        isLoading = false
+                    )
+                    logManager.d("SchedulesViewModel", "Loaded ${schedules.size} schedules in receiver mode")
+                } else {
+                    // Sender mode: Load from remote server via HTTP
+                    executeServerOperation(
+                        operationName = "load schedules",
+                        operation = { baseUrl -> networkRepository.getSchedules(baseUrl) },
+                        onSuccess = { scheduleList ->
+                            uiState.copy(
+                                schedules = scheduleList,
+                                isLoading = false
+                            )
+                        }
+                    )
+                }
             } catch (e: Exception) {
                 uiState = uiState.copy(
                     isLoading = false,
                     errorMessage = "Failed to load schedules: ${e.message}"
                 )
+                logManager.e("SchedulesViewModel", "Error loading schedules", e)
             }
         }
     }
 
     /**
      * Creates a new schedule.
+     * Uses local ScheduleManager in receiver mode or NetworkRepository in sender mode.
      */
     fun createSchedule(
         time: LocalTime,
@@ -145,34 +248,63 @@ class SchedulesViewModel(
             try {
                 uiState = uiState.copy(isLoading = true, errorMessage = null)
                 
-                // Create schedule via ScheduleManager (includes validation and DataStore persistence)
-                val result = scheduleManager.createSchedule(time, turnOn, days, enabled = true)
-                
-                result.fold(
-                    onSuccess = { newSchedule ->
-                        // Schedule alarms for the new schedule
-                        scheduleManager.scheduleAlarms(context, listOf(newSchedule))
-                        
-                        // Update local state
-                        uiState = uiState.copy(
-                            schedules = uiState.schedules + newSchedule,
-                            lastOperationMessage = "Schedule created and alarm set successfully",
-                            errorMessage = null,
-                            isLoading = false
-                        )
-                    },
-                    onFailure = { error ->
-                        uiState = uiState.copy(
-                            isLoading = false,
-                            errorMessage = error.message ?: "Failed to create schedule"
-                        )
-                    }
-                )
+                if (uiState.mode == "receiver") {
+                    // Receiver mode: Create locally with ScheduleManager
+                    val result = scheduleManager.createSchedule(time, turnOn, days, enabled = true)
+                    
+                    result.fold(
+                        onSuccess = { newSchedule ->
+                            // Schedule alarms for the new schedule
+                            scheduleManager.scheduleAlarms(context, listOf(newSchedule))
+                            
+                            // Update local state
+                            uiState = uiState.copy(
+                                schedules = uiState.schedules + newSchedule,
+                                lastOperationMessage = "Schedule created and alarm set successfully",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                            logManager.d("SchedulesViewModel", "Created schedule ${newSchedule.id} locally")
+                        },
+                        onFailure = { error ->
+                            uiState = uiState.copy(
+                                isLoading = false,
+                                errorMessage = error.message ?: "Failed to create schedule"
+                            )
+                            logManager.e("SchedulesViewModel", "Failed to create schedule locally: ${error.message}")
+                        }
+                    )
+                } else {
+                    // Sender mode: Create on remote server via HTTP
+                    // Create a schedule object to send
+                    val timeInSeconds = time.toSecondOfDay().toLong()
+                    val schedule = Schedule(
+                        id = 0, // Server will assign actual ID
+                        time = timeInSeconds,
+                        turnOn = turnOn,
+                        days = days,
+                        enabled = true
+                    )
+                    
+                    executeServerOperation(
+                        operationName = "create schedule",
+                        operation = { baseUrl -> networkRepository.createSchedule(baseUrl, schedule) },
+                        onSuccess = { createdSchedule ->
+                            uiState.copy(
+                                schedules = uiState.schedules + createdSchedule,
+                                lastOperationMessage = "Schedule created on server successfully",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                        }
+                    )
+                }
             } catch (e: Exception) {
                 uiState = uiState.copy(
                     isLoading = false,
                     errorMessage = "Failed to create schedule: ${e.message}"
                 )
+                logManager.e("SchedulesViewModel", "Error creating schedule", e)
             }
         }
     }
@@ -237,68 +369,97 @@ class SchedulesViewModel(
 
     /**
      * Deletes a schedule by ID.
+     * Uses local ScheduleManager in receiver mode or NetworkRepository in sender mode.
      */
     fun deleteSchedule(scheduleId: Int) {
         viewModelScope.launch {
             try {
                 uiState = uiState.copy(isLoading = true, errorMessage = null)
                 
-                // Delete schedule via ScheduleManager (includes validation and DataStore persistence)
-                val result = scheduleManager.deleteSchedule(scheduleId)
-                
-                result.fold(
-                    onSuccess = {
-                        // Cancel the alarms
-                        scheduleManager.cancelAlarm(context, scheduleId)
-                        
-                        // Update local state
-                        uiState = uiState.copy(
-                            schedules = uiState.schedules.filter { it.id != scheduleId },
-                            lastOperationMessage = "Schedule deleted and alarm cancelled successfully",
-                            errorMessage = null,
-                            isLoading = false
-                        )
-                    },
-                    onFailure = { error ->
-                        uiState = uiState.copy(
-                            isLoading = false,
-                            errorMessage = error.message ?: "Failed to delete schedule"
-                        )
-                    }
-                )
+                if (uiState.mode == "receiver") {
+                    // Receiver mode: Delete locally with ScheduleManager
+                    val result = scheduleManager.deleteSchedule(scheduleId)
+                    
+                    result.fold(
+                        onSuccess = {
+                            // Cancel the alarms
+                            scheduleManager.cancelAlarm(context, scheduleId)
+                            
+                            // Update local state
+                            uiState = uiState.copy(
+                                schedules = uiState.schedules.filter { it.id != scheduleId },
+                                lastOperationMessage = "Schedule deleted and alarm cancelled successfully",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                            logManager.d("SchedulesViewModel", "Deleted schedule $scheduleId locally")
+                        },
+                        onFailure = { error ->
+                            uiState = uiState.copy(
+                                isLoading = false,
+                                errorMessage = error.message ?: "Failed to delete schedule"
+                            )
+                            logManager.e("SchedulesViewModel", "Failed to delete schedule locally: ${error.message}")
+                        }
+                    )
+                } else {
+                    // Sender mode: Delete on remote server via HTTP
+                    executeServerOperation(
+                        operationName = "delete schedule",
+                        operation = { baseUrl -> networkRepository.deleteSchedule(baseUrl, scheduleId) },
+                        onSuccess = {
+                            uiState.copy(
+                                schedules = uiState.schedules.filter { it.id != scheduleId },
+                                lastOperationMessage = "Schedule deleted from server successfully",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                        }
+                    )
+                }
             } catch (e: Exception) {
                 uiState = uiState.copy(
                     isLoading = false,
                     errorMessage = "Failed to delete schedule: ${e.message}"
                 )
+                logManager.e("SchedulesViewModel", "Error deleting schedule", e)
             }
         }
     }
 
     /**
      * Toggles a schedule between enabled and disabled.
+     * Uses local ScheduleManager in receiver mode or NetworkRepository in sender mode.
      */
     fun toggleScheduleEnabled(scheduleId: Int) {
         viewModelScope.launch {
             try {
                 val schedule = uiState.schedules.find { it.id == scheduleId }
-                if (schedule != null) {
-                    uiState = uiState.copy(isLoading = true, errorMessage = null)
-                    
-                    // Toggle the enabled state
+                if (schedule == null) {
+                    uiState = uiState.copy(errorMessage = "Schedule not found")
+                    return@launch
+                }
+                
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+                
+                // Create updated schedule with toggled enabled state
+                val updatedSchedule = schedule.copy(enabled = !schedule.enabled)
+                
+                if (uiState.mode == "receiver") {
+                    // Receiver mode: Update locally with ScheduleManager
                     val result = scheduleManager.updateSchedule(
                         scheduleId = schedule.id,
                         time = schedule.timeInLocalTime,
                         turnOn = schedule.turnOn,
                         days = schedule.days,
-                        enabled = !schedule.enabled
+                        enabled = updatedSchedule.enabled
                     )
                     
                     result.fold(
-                        onSuccess = { updatedSchedule ->
-                            if (updatedSchedule.enabled) {
+                        onSuccess = { newSchedule ->
+                            if (newSchedule.enabled) {
                                 // Schedule alarms for the enabled schedule
-                                scheduleManager.scheduleAlarms(context, listOf(updatedSchedule))
+                                scheduleManager.scheduleAlarms(context, listOf(newSchedule))
                             } else {
                                 // Cancel alarms for the disabled schedule
                                 scheduleManager.cancelAlarm(context, scheduleId)
@@ -307,9 +468,9 @@ class SchedulesViewModel(
                             // Update local state
                             uiState = uiState.copy(
                                 schedules = uiState.schedules.map {
-                                    if (it.id == scheduleId) updatedSchedule else it
+                                    if (it.id == scheduleId) newSchedule else it
                                 },
-                                lastOperationMessage = if (updatedSchedule.enabled) 
+                                lastOperationMessage = if (newSchedule.enabled) 
                                     "Schedule enabled and alarms set" 
                                 else 
                                     "Schedule disabled and alarms cancelled",
@@ -325,8 +486,25 @@ class SchedulesViewModel(
                         }
                     )
                 } else {
-                    uiState = uiState.copy(
-                        errorMessage = "Schedule not found"
+                    // Sender mode: Update on remote server via HTTP
+                    executeServerOperation(
+                        operationName = "toggle schedule",
+                        operation = { baseUrl -> 
+                            networkRepository.updateSchedule(baseUrl, scheduleId, updatedSchedule) 
+                        },
+                        onSuccess = { resultSchedule ->
+                            uiState.copy(
+                                schedules = uiState.schedules.map {
+                                    if (it.id == scheduleId) resultSchedule else it
+                                },
+                                lastOperationMessage = if (resultSchedule.enabled) 
+                                    "Schedule enabled on server" 
+                                else 
+                                    "Schedule disabled on server",
+                                errorMessage = null,
+                                isLoading = false
+                            )
+                        }
                     )
                 }
             } catch (e: Exception) {
@@ -334,6 +512,7 @@ class SchedulesViewModel(
                     isLoading = false,
                     errorMessage = "Failed to toggle schedule: ${e.message}"
                 )
+                logManager.e("SchedulesViewModel", "Error toggling schedule", e)
             }
         }
     }
@@ -409,5 +588,8 @@ data class SchedulesUiState(
     val lastOperationMessage: String? = null,
     val errorMessage: String? = null,
     val hasExactAlarmPermission: Boolean = true,
-    val permissionWarning: String? = null
+    val permissionWarning: String? = null,
+    val mode: String = "receiver", // "receiver" or "sender"
+    val serverName: String? = null, // Server name when in sender mode
+    val targetServer: KtorServerData? = null // Target server configuration for sender mode
 )

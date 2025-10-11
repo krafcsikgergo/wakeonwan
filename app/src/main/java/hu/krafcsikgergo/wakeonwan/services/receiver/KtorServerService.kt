@@ -26,6 +26,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -307,6 +308,91 @@ class KtorServerService : Service() {
                     call.respond(
                         HttpStatusCode.Companion.InternalServerError,
                         mapOf("message" to "Failed to add schedule: ${e.message}")
+                    )
+                }
+            }
+
+            // Update an existing schedule
+            put("/schedules/{id}") {
+                logManager.d(TAG, "Received request to update schedule")
+
+                try {
+                    val scheduleIdStr = call.parameters["id"]
+                    if (scheduleIdStr == null) {
+                        call.respond(
+                            HttpStatusCode.Companion.BadRequest,
+                            mapOf("message" to "Schedule ID is required")
+                        )
+                        return@put
+                    }
+
+                    val scheduleId = scheduleIdStr.toIntOrNull()
+                    if (scheduleId == null) {
+                        call.respond(
+                            HttpStatusCode.Companion.BadRequest,
+                            mapOf("message" to "Invalid schedule ID format")
+                        )
+                        return@put
+                    }
+
+                    val schedule = call.receive<Schedule>()
+
+                    // Validate that the schedule ID in the URL matches the one in the body (if present)
+                    if (schedule.id != 0 && schedule.id != scheduleId) {
+                        call.respond(
+                            HttpStatusCode.Companion.BadRequest,
+                            mapOf("message" to "Schedule ID in URL does not match schedule ID in body")
+                        )
+                        return@put
+                    }
+
+                    // Update schedule via ScheduleManager (includes validation and DataStore persistence)
+                    val result = scheduleManager.updateSchedule(
+                        scheduleId = scheduleId,
+                        time = schedule.timeInLocalTime,
+                        turnOn = schedule.turnOn,
+                        days = schedule.days,
+                        enabled = schedule.enabled
+                    )
+
+                    result.fold(
+                        onSuccess = { updatedSchedule ->
+                            // Update alarms based on enabled state
+                            if (updatedSchedule.enabled) {
+                                // Schedule alarms for the enabled schedule
+                                scheduleManager.scheduleAlarms(this@KtorServerService, listOf(updatedSchedule))
+                            } else {
+                                // Cancel alarms for the disabled schedule
+                                scheduleManager.cancelAlarm(this@KtorServerService, scheduleId)
+                            }
+
+                            logManager.d(TAG, "Schedule $scheduleId updated successfully")
+                            call.respond(
+                                HttpStatusCode.Companion.OK,
+                                mapOf<String, Any>(
+                                    "message" to "Schedule updated successfully",
+                                    "schedule" to updatedSchedule
+                                )
+                            )
+                        },
+                        onFailure = { exception ->
+                            logManager.e(TAG, "Failed to update schedule", exception)
+                            val statusCode = if (exception.message?.contains("not found") == true) {
+                                HttpStatusCode.Companion.NotFound
+                            } else {
+                                HttpStatusCode.Companion.InternalServerError
+                            }
+                            call.respond(
+                                statusCode,
+                                mapOf<String, String>("message" to (exception.message ?: "Failed to update schedule"))
+                            )
+                        }
+                    )
+                } catch (e: Exception) {
+                    logManager.e(TAG, "Failed to update schedule", e)
+                    call.respond(
+                        HttpStatusCode.Companion.InternalServerError,
+                        mapOf<String, String>("message" to "Failed to update schedule: ${e.message}")
                     )
                 }
             }
