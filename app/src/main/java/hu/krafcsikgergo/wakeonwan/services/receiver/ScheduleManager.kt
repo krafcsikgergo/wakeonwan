@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import hu.krafcsikgergo.wakeonwan.services.AlarmReceiver
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.LogManager
 import kotlinx.coroutines.Dispatchers

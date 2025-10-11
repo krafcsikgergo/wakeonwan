@@ -1,10 +1,10 @@
-package hu.krafcsikgergo.wakeonwan.services
+package hu.krafcsikgergo.wakeonwan.services.receiver
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
-import hu.krafcsikgergo.wakeonwan.services.receiver.WakeOnLanService
+import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
+import hu.krafcsikgergo.wakeonwan.services.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
