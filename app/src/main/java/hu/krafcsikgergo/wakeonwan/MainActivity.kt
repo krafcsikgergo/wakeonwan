@@ -3,9 +3,11 @@ package hu.krafcsikgergo.wakeonwan
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -14,67 +16,51 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.core.splashscreen.SplashScreen
+import kotlinx.coroutines.launch
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
-import hu.krafcsikgergo.wakeonwan.ui.theme.WakeOnWANTheme
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
-import hu.krafcsikgergo.wakeonwan.services.KtorServerData
-import hu.krafcsikgergo.wakeonwan.services.ServerData
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import hu.krafcsikgergo.wakeonwan.ui.screens.ReceiverScreen
+import hu.krafcsikgergo.wakeonwan.ui.screens.SchedulesScreen
+import hu.krafcsikgergo.wakeonwan.ui.screens.SenderScreen
+import hu.krafcsikgergo.wakeonwan.ui.screens.LogScreen
+import hu.krafcsikgergo.wakeonwan.ui.theme.WakeOnWANTheme
+import org.koin.core.component.KoinComponent
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), KoinComponent {
+
+    val dataStoreManager: DataStoreManager by lazy { getKoin().get() }
+    private var isDataLoaded = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installSplashScreen()
+        enableEdgeToEdge()
+
+        val splashScreen = installSplashScreen()
+
+        // Keep splash screen visible until data is loaded
+        splashScreen.setKeepOnScreenCondition { !isDataLoaded }
+
         setContent {
-            var dataLoaded by remember { mutableStateOf(false) }
-            LaunchedEffect(dataLoaded) {
-                // Get the IP address and port of the Ktor server from the DataStore
-                KtorServerData.ipAddress =
-                    DataStoreManager.getInstance(this@MainActivity).getString("ktorIpAddress")
-                        ?: "192.168.0.1"
-                KtorServerData.port =
-                    DataStoreManager.getInstance(this@MainActivity).getString("communicationPort")
-                        ?.toInt() ?: 8080
-
-                // Get the Server data from the DataStore
-                ServerData.ipAddress =
-                    DataStoreManager.getInstance(this@MainActivity).getString("serverIpAddress")
-                        ?: "192.168.0.1"
-                ServerData.macAddress =
-                    DataStoreManager.getInstance(this@MainActivity).getString("serverMacAddress")
-                        ?: "00:00:00:00:00:00"
-                ServerData.sshPort =
-                    DataStoreManager.getInstance(this@MainActivity).getString("serverSSHPort")
-                        ?.toInt()
-                        ?: 22
-                ServerData.username =
-                    DataStoreManager.getInstance(this@MainActivity).getString("serverUsername")
-                        ?: ""
-                ServerData.password =
-                    DataStoreManager.getInstance(this@MainActivity).getString("serverPassword")
-                        ?: ""
-
-                dataLoaded = true
-            }
+            // Remove when https://issuetracker.google.com/issues/364713509 is fixed
+            LaunchedEffect(isSystemInDarkTheme()) { enableEdgeToEdge() }
             WakeOnWANTheme {
-                if (dataLoaded) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        NavHost()
-                    }
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    WakeOnWANNavigation(
+                        dataStoreManager = dataStoreManager,
+                        onDataLoaded = { isDataLoaded = true }
+                    )
                 }
             }
         }
@@ -82,11 +68,39 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun NavHost(
-    modifier: Modifier = Modifier,
-    navController: NavHostController = rememberNavController(),
-    startDestination: String = NavigationItem.Sender.route,
+fun WakeOnWANNavigation(
+    dataStoreManager: DataStoreManager,
+    onDataLoaded: () -> Unit
 ) {
+    var startDestination by remember { mutableStateOf<String?>(null) }
+
+    // Load the last page asynchronously
+    LaunchedEffect(Unit) {
+        val loadedLastPage = dataStoreManager.getLastPage() ?: NavigationItem.Sender.route
+        startDestination = when (loadedLastPage) {
+            NavigationItem.Sender.route,
+            NavigationItem.Receiver.route -> loadedLastPage
+
+            else -> NavigationItem.Sender.route
+        }
+        // Notify that data is loaded
+        onDataLoaded()
+    }
+
+    // Only show navigation once we have loaded the start destination
+    startDestination?.let { destination ->
+        NavHost(startDestination = destination, dataStoreManager = dataStoreManager)
+    }
+}
+
+@Composable
+fun NavHost(
+    navController: NavHostController = rememberNavController(),
+    startDestination: String,
+    dataStoreManager: DataStoreManager
+) {
+    val coroutineScope = rememberCoroutineScope()
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -96,13 +110,24 @@ fun NavHost(
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             SenderScreen(
-                navigate = {
+                navigateToReceiver = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Receiver.route)
+                    }
                     navController.navigate(NavigationItem.Receiver.route) {
                         popUpTo(NavigationItem.Sender.route) {
                             inclusive = true
                         }
                     }
-
+                },
+                navigateToLogs = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Logs.route)
+                    }
+                    navController.navigate(NavigationItem.Logs.route)
+                },
+                navigateToSchedules = { serverId ->
+                    navController.navigate("${NavigationItem.Schedules.route}?mode=sender&serverId=$serverId")
                 }
             )
         }
@@ -112,34 +137,64 @@ fun NavHost(
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
             ReceiverScreen(
-                navigate = {
+                navigateToSender = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Sender.route)
+                    }
                     navController.navigate(NavigationItem.Sender.route) {
                         popUpTo(NavigationItem.Receiver.route) {
                             inclusive = true
                         }
                     }
-
                 },
-                navigteToSchedules = {
-                    navController.navigate(NavigationItem.Schedules.route) {
-                        popUpTo(NavigationItem.Receiver.route) {
-                            inclusive = true
-                        }
+                navigateToSchedules = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Schedules.route)
                     }
+                    navController.navigate("${NavigationItem.Schedules.route}?mode=receiver")
+                },
+                navigateToLogs = {
+                    coroutineScope.launch {
+                        dataStoreManager.saveLastPage(NavigationItem.Logs.route)
+                    }
+                    navController.navigate(NavigationItem.Logs.route)
                 }
             )
         }
 
         composable(
-            NavigationItem.Schedules.route,
+            route = "${NavigationItem.Schedules.route}?mode={mode}&serverId={serverId}",
+            arguments = listOf(
+                navArgument("mode") {
+                    type = NavType.StringType
+                    defaultValue = "receiver"
+                },
+                navArgument("serverId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+            enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
+            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) { backStackEntry ->
+            val mode = backStackEntry.arguments?.getString("mode") ?: "receiver"
+            val serverId = backStackEntry.arguments?.getString("serverId")
+            
+            SchedulesScreen(
+                mode = mode,
+                serverId = serverId,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            NavigationItem.Logs.route,
             enterTransition = { fadeIn(animationSpec = tween(durationMillis = 10)) },
             exitTransition = { fadeOut(animationSpec = tween(durationMillis = 10)) }) {
-            SchedulesScreen() {
-                navController.navigate(NavigationItem.Receiver.route) {
-                    popUpTo(NavigationItem.Schedules.route) {
-                        inclusive = true
-                    }
-                }
+            LogScreen {
+                navController.popBackStack()
             }
         }
 
@@ -151,4 +206,5 @@ sealed class NavigationItem(val route: String) {
     object Sender : NavigationItem("sender")
     object Receiver : NavigationItem("receiver")
     object Schedules : NavigationItem("schedules")
+    object Logs : NavigationItem("logs")
 }
