@@ -588,10 +588,28 @@ fun AddScheduleDialog(
 @Composable
 fun DaySelectionRow(selectedDays: List<MutableState<Boolean>>) {
     val dayLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    val allSelected = selectedDays.all { it.value }
+    val someSelected = selectedDays.any { it.value }
 
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+            FilterChip(
+                onClick = {
+                    val newValue = !allSelected
+                    selectedDays.forEach { it.value = newValue }
+                },
+                label = {
+                    Text(
+                        "All",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                },
+                selected = allSelected,
+                modifier = Modifier.height(36.dp)
+            )
+        }
         itemsIndexed(dayLabels) { index, label ->
             FilterChip(
                 onClick = { selectedDays[index].value = !selectedDays[index].value },

@@ -31,7 +31,7 @@
             android:foregroundServiceType="connectedDevice" />
 
         <receiver
-            android:name=".services.AlarmReceiver"
+            android:name=".services.receiver.AlarmReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>
