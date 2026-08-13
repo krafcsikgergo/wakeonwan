@@ -5,34 +5,53 @@ import hu.krafcsikgergo.wakeonwan.common.model.Schedule
 import hu.krafcsikgergo.wakeonwan.common.model.StatusResponse
 import hu.krafcsikgergo.wakeonwan.common.services.LogManager
 import io.ktor.client.HttpClient
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+
+private const val PAIRING_TOKEN_HEADER = "X-WOL-Token"
+private const val UNPAIRED_MESSAGE = "Not paired with this receiver — scan its QR code again to re-pair"
+
+private fun HttpRequestBuilder.applyPairingToken(token: String?) {
+    if (!token.isNullOrBlank()) {
+        header(PAIRING_TOKEN_HEADER, token)
+    }
+}
+
+private val HttpResponse.isUnauthorized: Boolean
+    get() = status == HttpStatusCode.Unauthorized
 
 /**
  * Repository interface for network operations.
  * Handles HTTP requests to remote servers for wake-up, shutdown, health checks, and schedule management.
+ * Every endpoint except the plain health check requires the receiver's pairing token.
  */
 interface NetworkRepository {
 
     /**
      * Sends a wake-up request to the remote server.
      * @param baseUrl The base URL for the server (e.g., "http://192.168.1.100:8080")
+     * @param token The pairing token for this server, if paired
      * @return Result containing success message or error
      */
-    suspend fun wakeUpRemoteServer(baseUrl: String): Result<String>
+    suspend fun wakeUpRemoteServer(baseUrl: String, token: String?): Result<String>
 
     /**
      * Sends a shutdown request to the remote server.
      * @param baseUrl The base URL for the server (e.g., "http://192.168.1.100:8080")
+     * @param token The pairing token for this server, if paired
      * @return Result containing success message or error
      */
-    suspend fun shutDownRemoteServer(baseUrl: String): Result<String>
+    suspend fun shutDownRemoteServer(baseUrl: String, token: String?): Result<String>
 
     /**
      * Checks if the server is reachable and responsive.
@@ -42,44 +61,57 @@ interface NetworkRepository {
     suspend fun checkKtorAppHealth(baseUrl: String): Boolean
 
     /**
-     * Checks the server status endpoint.
+     * Checks the target server's connectivity via the receiver: ping first, then
+     * (only if that succeeds) a plain SSH connect/disconnect.
      * @param baseUrl The base URL for the server (e.g., "http://192.168.1.100:8080")
-     * @return true if server status endpoint responds, false otherwise
+     * @param token The pairing token for this server, if paired
+     * @return the ping and SSH reachability of the target server
      */
-    suspend fun getServerStatus(baseUrl: String): Boolean
+    suspend fun getServerStatus(baseUrl: String, token: String?): ServerConnectionStatus
 
     /**
      * Retrieves all schedules from the remote server.
      * @param baseUrl The base URL for the server (e.g., "http://192.168.1.100:8080")
+     * @param token The pairing token for this server, if paired
      * @return Result containing list of schedules or error
      */
-    suspend fun getSchedules(baseUrl: String): Result<List<Schedule>>
+    suspend fun getSchedules(baseUrl: String, token: String?): Result<List<Schedule>>
 
     /**
      * Creates a new schedule on the remote server.
      * @param baseUrl The base URL for the server
      * @param schedule The schedule to create
+     * @param token The pairing token for this server, if paired
      * @return Result containing the created schedule with its assigned ID or error
      */
-    suspend fun createSchedule(baseUrl: String, schedule: Schedule): Result<Schedule>
+    suspend fun createSchedule(baseUrl: String, schedule: Schedule, token: String?): Result<Schedule>
 
     /**
      * Updates an existing schedule on the remote server.
      * @param baseUrl The base URL for the server
      * @param scheduleId The ID of the schedule to update
      * @param schedule The updated schedule data
+     * @param token The pairing token for this server, if paired
      * @return Result containing the updated schedule or error
      */
-    suspend fun updateSchedule(baseUrl: String, scheduleId: Int, schedule: Schedule): Result<Schedule>
+    suspend fun updateSchedule(baseUrl: String, scheduleId: Int, schedule: Schedule, token: String?): Result<Schedule>
 
     /**
      * Deletes a schedule from the remote server.
      * @param baseUrl The base URL for the server
      * @param scheduleId The ID of the schedule to delete
+     * @param token The pairing token for this server, if paired
      * @return Result containing Unit on success or error
      */
-    suspend fun deleteSchedule(baseUrl: String, scheduleId: Int): Result<Unit>
+    suspend fun deleteSchedule(baseUrl: String, scheduleId: Int, token: String?): Result<Unit>
 }
+
+data class ServerConnectionStatus(
+    val pingSuccess: Boolean,
+    val sshSuccess: Boolean,
+    val message: String,
+    val isUnauthorized: Boolean = false
+)
 
 /**
  * Implementation of NetworkRepository that handles HTTP operations.
@@ -90,14 +122,18 @@ class NetworkRepositoryImpl(
     private val logManager: LogManager
 ) : NetworkRepository {
 
-    override suspend fun wakeUpRemoteServer(baseUrl: String): Result<String> {
+    override suspend fun wakeUpRemoteServer(baseUrl: String, token: String?): Result<String> {
         return try {
             logManager.d("NetworkRepository", "Making wake-up request to: $baseUrl/wakeup")
-            val response = httpClient.get("$baseUrl/wakeup")
+            val response = httpClient.get("$baseUrl/wakeup") { applyPairingToken(token) }
             val jsonResponse = response.bodyAsText()
 
             logManager.d("NetworkRepository", "Wake-up response: $jsonResponse")
             logManager.d("NetworkRepository", "Response status: ${response.status}")
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
+            }
 
             val message = parseResponseMessage(jsonResponse)
             Result.success(message)
@@ -108,14 +144,18 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun shutDownRemoteServer(baseUrl: String): Result<String> {
+    override suspend fun shutDownRemoteServer(baseUrl: String, token: String?): Result<String> {
         return try {
             logManager.d("NetworkRepository", "Making shutdown request to: $baseUrl/shutdown")
-            val response = httpClient.get("$baseUrl/shutdown")
+            val response = httpClient.get("$baseUrl/shutdown") { applyPairingToken(token) }
             val jsonResponse = response.bodyAsText()
 
             logManager.d("NetworkRepository", "Shutdown response: $jsonResponse")
             logManager.d("NetworkRepository", "Response status: ${response.status}")
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
+            }
 
             val message = parseResponseMessage(jsonResponse)
             Result.success(message)
@@ -141,25 +181,49 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun getServerStatus(baseUrl: String): Boolean {
+    override suspend fun getServerStatus(baseUrl: String, token: String?): ServerConnectionStatus {
         return try {
-            val response = httpClient.get("$baseUrl/test-server")
-            val isHealthy = response.status.value in 200..299
+            val response = httpClient.get("$baseUrl/test-server") { applyPairingToken(token) }
+            val jsonResponse = response.bodyAsText()
             logManager.d(
                 "NetworkRepository",
-                "Server status check: $isHealthy, response status: ${response.status}"
+                "Server status check response: $jsonResponse, response status: ${response.status}"
             )
-            isHealthy
+
+            if (response.isUnauthorized) {
+                return ServerConnectionStatus(
+                    pingSuccess = false,
+                    sshSuccess = false,
+                    message = UNPAIRED_MESSAGE,
+                    isUnauthorized = true
+                )
+            }
+
+            val gson = Gson()
+            val responseMap = gson.fromJson<Map<String, Any>>(
+                jsonResponse,
+                object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+            )
+
+            ServerConnectionStatus(
+                pingSuccess = responseMap["ping"] as? Boolean ?: false,
+                sshSuccess = responseMap["ssh"] as? Boolean ?: false,
+                message = responseMap["message"] as? String ?: ""
+            )
         } catch (e: Exception) {
             logManager.e("NetworkRepository", "Status check error: ${e.message}")
-            false
+            ServerConnectionStatus(pingSuccess = false, sshSuccess = false, message = e.message ?: "Unknown error")
         }
     }
 
-    override suspend fun getSchedules(baseUrl: String): Result<List<Schedule>> {
+    override suspend fun getSchedules(baseUrl: String, token: String?): Result<List<Schedule>> {
         return try {
             logManager.d("NetworkRepository", "Fetching schedules from: $baseUrl/schedules")
-            val response = httpClient.get("$baseUrl/schedules")
+            val response = httpClient.get("$baseUrl/schedules") { applyPairingToken(token) }
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
+            }
 
             if (response.status.value !in 200..299) {
                 logManager.e("NetworkRepository", "Failed to get schedules: ${response.status}")
@@ -183,15 +247,20 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun createSchedule(baseUrl: String, schedule: Schedule): Result<Schedule> {
+    override suspend fun createSchedule(baseUrl: String, schedule: Schedule, token: String?): Result<Schedule> {
         return try {
             val gson = Gson()
             logManager.d("NetworkRepository", "Creating schedule at: $baseUrl/schedules")
             logManager.d("NetworkRepository", "Schedule data: ${gson.toJson(schedule)}")
 
             val response = httpClient.post("$baseUrl/schedules") {
+                applyPairingToken(token)
                 contentType(ContentType.Application.Json)
                 setBody(gson.toJson(schedule))
+            }
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
             }
 
             if (response.status.value !in 200..299) {
@@ -222,15 +291,25 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun updateSchedule(baseUrl: String, scheduleId: Int, schedule: Schedule): Result<Schedule> {
+    override suspend fun updateSchedule(
+        baseUrl: String,
+        scheduleId: Int,
+        schedule: Schedule,
+        token: String?
+    ): Result<Schedule> {
         return try {
             val gson = Gson()
             logManager.d("NetworkRepository", "Updating schedule at: $baseUrl/schedules/$scheduleId")
             logManager.d("NetworkRepository", "Schedule data: ${gson.toJson(schedule)}")
 
             val response = httpClient.put("$baseUrl/schedules/$scheduleId") {
+                applyPairingToken(token)
                 contentType(ContentType.Application.Json)
                 setBody(gson.toJson(schedule))
+            }
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
             }
 
             if (response.status.value !in 200..299) {
@@ -266,11 +345,15 @@ class NetworkRepositoryImpl(
         }
     }
 
-    override suspend fun deleteSchedule(baseUrl: String, scheduleId: Int): Result<Unit> {
+    override suspend fun deleteSchedule(baseUrl: String, scheduleId: Int, token: String?): Result<Unit> {
         return try {
             logManager.d("NetworkRepository", "Deleting schedule from: $baseUrl/schedules/$scheduleId")
 
-            val response = httpClient.delete("$baseUrl/schedules/$scheduleId")
+            val response = httpClient.delete("$baseUrl/schedules/$scheduleId") { applyPairingToken(token) }
+
+            if (response.isUnauthorized) {
+                return Result.failure(Exception(UNPAIRED_MESSAGE))
+            }
 
             if (response.status.value !in 200..299) {
                 val errorBody = response.bodyAsText()

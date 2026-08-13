@@ -8,6 +8,8 @@ import hu.krafcsikgergo.wakeonwan.sender.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.sender.services.DataStoreManagerImpl
 import hu.krafcsikgergo.wakeonwan.sender.services.NetworkRepository
 import hu.krafcsikgergo.wakeonwan.sender.services.NetworkRepositoryImpl
+import hu.krafcsikgergo.wakeonwan.sender.services.PairingTokenStore
+import hu.krafcsikgergo.wakeonwan.sender.services.PairingTokenStoreImpl
 import hu.krafcsikgergo.wakeonwan.sender.ui.screens.SchedulesViewModel
 import hu.krafcsikgergo.wakeonwan.sender.ui.screens.SenderViewModel
 import io.ktor.client.HttpClient
@@ -48,6 +50,7 @@ class SenderApplication : Application() {
                     singleOf(::DataStoreManagerImpl).bind<DataStoreManager>()
                     singleOf(::LogManagerImpl).bind<LogManager>()
                     singleOf(::NetworkRepositoryImpl).bind<NetworkRepository>()
+                    singleOf(::PairingTokenStoreImpl).bind<PairingTokenStore>()
 
                     viewModelOf(::SenderViewModel)
                     viewModelOf(::SchedulesViewModel)

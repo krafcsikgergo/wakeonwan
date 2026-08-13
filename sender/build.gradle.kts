@@ -67,6 +67,8 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:3.3.0")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.3.0")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("androidx.security:security-crypto:1.0.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     // Datastore
     implementation("androidx.datastore:datastore-preferences:1.1.7")

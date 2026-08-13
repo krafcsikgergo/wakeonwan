@@ -21,3 +21,15 @@ data class Schedule(
 data class StatusResponse(
     val message: String
 )
+
+/**
+ * Payload encoded into the receiver's pairing QR code so a sender can add the
+ * server and authenticate to it in a single scan.
+ */
+@Serializable
+data class PairingPayload(
+    val name: String,
+    val ipAddress: String,
+    val port: Int,
+    val token: String
+)

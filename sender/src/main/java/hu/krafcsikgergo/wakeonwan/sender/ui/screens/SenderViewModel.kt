@@ -5,10 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import hu.krafcsikgergo.wakeonwan.common.model.PairingPayload
 import hu.krafcsikgergo.wakeonwan.common.model.defaultKtorPort
 import hu.krafcsikgergo.wakeonwan.sender.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.sender.services.KtorServerData
 import hu.krafcsikgergo.wakeonwan.sender.services.NetworkRepository
+import hu.krafcsikgergo.wakeonwan.sender.services.PairingTokenStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -17,7 +20,8 @@ import kotlinx.coroutines.launch
  */
 class SenderViewModel(
     private val networkRepository: NetworkRepository,
-    private val dataStoreManager: DataStoreManager
+    private val dataStoreManager: DataStoreManager,
+    private val pairingTokenStore: PairingTokenStore
 ) : ViewModel() {
 
     // UI State
@@ -100,7 +104,7 @@ class SenderViewModel(
         viewModelScope.launch {
             try {
                 val baseUrl = getBaseUrl()
-                val result = networkRepository.wakeUpRemoteServer(baseUrl)
+                val result = networkRepository.wakeUpRemoteServer(baseUrl, getSelectedServerToken())
                 result.fold(
                     onSuccess = { message ->
                         uiState = uiState.copy(
@@ -133,7 +137,7 @@ class SenderViewModel(
         viewModelScope.launch {
             try {
                 val baseUrl = getBaseUrl()
-                val result = networkRepository.shutDownRemoteServer(baseUrl)
+                val result = networkRepository.shutDownRemoteServer(baseUrl, getSelectedServerToken())
                 result.fold(
                     onSuccess = { message ->
                         uiState = uiState.copy(
@@ -168,6 +172,33 @@ class SenderViewModel(
      */
     fun clearError() {
         uiState = uiState.copy(errorMessage = null)
+    }
+
+    /**
+     * Adds and pairs with a server described by a scanned pairing QR code:
+     * saves the server entry and stores its pairing token together.
+     */
+    fun addServerFromPairingPayload(payload: PairingPayload) {
+        val newServer = KtorServerData(
+            name = payload.name,
+            ipAddress = payload.ipAddress,
+            port = payload.port
+        )
+        viewModelScope.launch {
+            try {
+                dataStoreManager.addKtorServer(newServer)
+                pairingTokenStore.saveToken(newServer.id, payload.token)
+                val updatedServers = dataStoreManager.getKtorServers()
+                uiState = uiState.copy(
+                    ktorServers = updatedServers,
+                    selectedKtorServer = newServer,
+                    lastOperationMessage = "Paired with ${newServer.name}"
+                )
+                selectKtorServer(newServer.id)
+            } catch (e: Exception) {
+                updateErrorState("Failed to save paired server: ${e.message}")
+            }
+        }
     }
 
     fun saveNewKtorServer(newServer: KtorServerData) {
@@ -235,6 +266,14 @@ class SenderViewModel(
     private fun getBaseUrl(): String {
         val selectedServer = uiState.selectedKtorServer
         return "http://${selectedServer.ipAddress}:${selectedServer.port}"
+    }
+
+    /**
+     * Looks up the pairing token for the currently selected server, if it was
+     * added via QR pairing.
+     */
+    private fun getSelectedServerToken(): String? {
+        return pairingTokenStore.getToken(uiState.selectedKtorServer.id)
     }
 
     /**

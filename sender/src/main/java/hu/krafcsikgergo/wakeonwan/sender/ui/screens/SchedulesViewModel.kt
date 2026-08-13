@@ -10,6 +10,7 @@ import hu.krafcsikgergo.wakeonwan.common.services.LogManager
 import hu.krafcsikgergo.wakeonwan.sender.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.sender.services.KtorServerData
 import hu.krafcsikgergo.wakeonwan.sender.services.NetworkRepository
+import hu.krafcsikgergo.wakeonwan.sender.services.PairingTokenStore
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 
@@ -20,6 +21,7 @@ import java.time.LocalTime
 class SchedulesViewModel(
     private val dataStoreManager: DataStoreManager,
     private val networkRepository: NetworkRepository,
+    private val pairingTokenStore: PairingTokenStore,
     private val logManager: LogManager
 ) : ViewModel() {
 
@@ -71,12 +73,13 @@ class SchedulesViewModel(
      */
     private suspend fun <T> executeServerOperation(
         operationName: String,
-        operation: suspend (String) -> Result<T>,
+        operation: suspend (String, String?) -> Result<T>,
         onSuccess: (T) -> SchedulesUiState
     ): Boolean {
         val baseUrl = getServerBaseUrl() ?: return false
+        val token = uiState.targetServer?.let { pairingTokenStore.getToken(it.id) }
 
-        val result = operation(baseUrl)
+        val result = operation(baseUrl, token)
         result.fold(
             onSuccess = { data ->
                 uiState = onSuccess(data)
@@ -101,7 +104,7 @@ class SchedulesViewModel(
             uiState = uiState.copy(isLoading = true, errorMessage = null)
             executeServerOperation(
                 operationName = "load schedules",
-                operation = { baseUrl -> networkRepository.getSchedules(baseUrl) },
+                operation = { baseUrl, token -> networkRepository.getSchedules(baseUrl, token) },
                 onSuccess = { scheduleList ->
                     uiState.copy(
                         schedules = scheduleList,
@@ -134,7 +137,7 @@ class SchedulesViewModel(
 
             executeServerOperation(
                 operationName = "create schedule",
-                operation = { baseUrl -> networkRepository.createSchedule(baseUrl, schedule) },
+                operation = { baseUrl, token -> networkRepository.createSchedule(baseUrl, schedule, token) },
                 onSuccess = { createdSchedule ->
                     uiState.copy(
                         schedules = uiState.schedules + createdSchedule,
@@ -155,7 +158,7 @@ class SchedulesViewModel(
             uiState = uiState.copy(isLoading = true, errorMessage = null)
             executeServerOperation(
                 operationName = "delete schedule",
-                operation = { baseUrl -> networkRepository.deleteSchedule(baseUrl, scheduleId) },
+                operation = { baseUrl, token -> networkRepository.deleteSchedule(baseUrl, scheduleId, token) },
                 onSuccess = {
                     uiState.copy(
                         schedules = uiState.schedules.filter { it.id != scheduleId },
@@ -185,8 +188,8 @@ class SchedulesViewModel(
 
             executeServerOperation(
                 operationName = "toggle schedule",
-                operation = { baseUrl ->
-                    networkRepository.updateSchedule(baseUrl, scheduleId, updatedSchedule)
+                operation = { baseUrl, token ->
+                    networkRepository.updateSchedule(baseUrl, scheduleId, updatedSchedule, token)
                 },
                 onSuccess = { resultSchedule ->
                     uiState.copy(

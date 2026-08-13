@@ -1,6 +1,8 @@
 package hu.krafcsikgergo.wakeonwan.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +26,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,7 +110,11 @@ fun ReceiverScreen(navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) 
                     },
                     isStoppingInProgress = uiState.isKtorServerOperationInProgress,
                     onCheckConnection = { viewModel.checkConnection() },
-                    isCheckingConnection = uiState.isCheckingConnection
+                    isCheckingConnection = uiState.isCheckingConnection,
+                    isShowingPairingQr = uiState.isShowingPairingQr,
+                    pairingQrPayload = uiState.pairingQrPayload,
+                    onToggleAddSenderDevice = { viewModel.toggleAddSenderDevice() },
+                    onRegeneratePairingToken = { viewModel.regeneratePairingToken() }
                 )
             } else {
                 // Configuration Input Sections
@@ -166,7 +174,11 @@ fun ServerRunningSection(
     onStopServer: () -> Unit,
     isStoppingInProgress: Boolean,
     onCheckConnection: () -> Unit,
-    isCheckingConnection: Boolean
+    isCheckingConnection: Boolean,
+    isShowingPairingQr: Boolean,
+    pairingQrPayload: String?,
+    onToggleAddSenderDevice: () -> Unit,
+    onRegeneratePairingToken: () -> Unit
 ) {
     var elapsedTime by remember { mutableLongStateOf(0L) }
 
@@ -276,6 +288,41 @@ fun ServerRunningSection(
                     isLoading = isStoppingInProgress,
                     modifier = Modifier.width(160.dp)
                 )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(onClick = onToggleAddSenderDevice) {
+                Text(if (isShowingPairingQr) "Hide Pairing Code" else "Add Sender Device")
+            }
+
+            if (isShowingPairingQr && pairingQrPayload != null) {
+                val qrBitmap = remember(pairingQrPayload) {
+                    generateQrCodeBitmap(pairingQrPayload).asImageBitmap()
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Image(
+                        bitmap = qrBitmap,
+                        contentDescription = "Pairing QR code",
+                        modifier = Modifier
+                            .size(220.dp)
+                            .background(Color.White)
+                            .padding(8.dp)
+                    )
+                    Text(
+                        text = "Scan this from the sender app to add and pair this server",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    TextButton(onClick = onRegeneratePairingToken) {
+                        Text("Regenerate Pairing Code")
+                    }
+                }
             }
         }
     }

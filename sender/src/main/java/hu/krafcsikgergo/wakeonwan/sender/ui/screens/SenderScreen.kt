@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
@@ -55,12 +56,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import hu.krafcsikgergo.wakeonwan.common.model.PairingPayload
 import hu.krafcsikgergo.wakeonwan.common.model.defaultKtorPort
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.IPTextField
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.PortTextField
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.isValidIPv4
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.TopRow
 import hu.krafcsikgergo.wakeonwan.sender.services.KtorServerData
+import kotlinx.serialization.json.Json
 import org.koin.androidx.compose.koinViewModel
 
 
@@ -118,6 +124,28 @@ fun SenderScreen(
                 },
                 onAddServerClick = {
                     showAddServerDialog = true
+                },
+                onScanQrClick = {
+                    val scanner = GmsBarcodeScanning.getClient(
+                        context,
+                        GmsBarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                            .build()
+                    )
+                    scanner.startScan()
+                        .addOnSuccessListener { barcode ->
+                            val rawValue = barcode.rawValue
+                            if (rawValue == null) {
+                                Toast.makeText(context, "Empty QR code", Toast.LENGTH_SHORT).show()
+                                return@addOnSuccessListener
+                            }
+                            try {
+                                val payload = Json.decodeFromString<PairingPayload>(rawValue)
+                                viewModel.addServerFromPairingPayload(payload)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Not a valid pairing QR code", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                 },
                 onDeleteServer = { serverId ->
                     viewModel.deleteKtorServer(serverId)
@@ -204,6 +232,7 @@ fun ServerSelectorSection(
     servers: List<KtorServerData>,
     onServerSelected: (KtorServerData) -> Unit,
     onAddServerClick: () -> Unit,
+    onScanQrClick: () -> Unit,
     onDeleteServer: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -333,6 +362,28 @@ fun ServerSelectorSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp) // Consistent height
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        "Scan QR Code",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = "Scan QR code",
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                onClick = {
+                    onScanQrClick()
+                    expanded = false
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             )
         }
     }

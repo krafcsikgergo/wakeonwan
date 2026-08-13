@@ -16,12 +16,14 @@ import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.gson.gson
 import io.ktor.server.application.Application
+import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.application.install
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.request.path
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.delete
@@ -32,6 +34,7 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
+import java.security.MessageDigest
 
 class KtorServerService : Service() {
     private val TAG = "KtorServerService"
@@ -39,6 +42,7 @@ class KtorServerService : Service() {
     private val dataStoreManager: DataStoreManager by inject()
     private val wakeOnLanService: WakeOnLanService by inject()
     private val scheduleManager: ScheduleManager by inject()
+    private val pairingTokenManager: PairingTokenManager by inject()
     private val logManager: LogManager by inject()
 
     companion object {
@@ -109,7 +113,29 @@ class KtorServerService : Service() {
             gson()
         }
 
+        install(createApplicationPlugin("PairingTokenAuth") {
+            onCall { call ->
+                val path = call.request.path()
+                if (path != "/") {
+                    val expectedToken = pairingTokenManager.getToken()
+                    val providedToken = call.request.headers["X-WOL-Token"]
+                    val isAuthorized = expectedToken != null &&
+                        providedToken != null &&
+                        MessageDigest.isEqual(expectedToken.toByteArray(), providedToken.toByteArray())
+
+                    if (!isAuthorized) {
+                        logManager.w(TAG, "Rejected unauthenticated request to $path")
+                        call.respond(
+                            HttpStatusCode.Companion.Unauthorized,
+                            mapOf("message" to "Missing or invalid pairing token")
+                        )
+                    }
+                }
+            }
+        })
+
         routing {
+
             // Testing
             get("/") {
                 logManager.d(TAG, "Received request to test ktor running")
