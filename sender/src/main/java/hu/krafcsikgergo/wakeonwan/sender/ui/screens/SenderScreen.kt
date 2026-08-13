@@ -2,6 +2,8 @@ package hu.krafcsikgergo.wakeonwan.sender.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -133,7 +135,8 @@ fun SenderScreen(
             // Status Checkers Section
             StatusCheckersSection(
                 ktorServerStatus = uiState.ktorServerStatus,
-                serverStatus = uiState.serverStatus,
+                serverPingStatus = uiState.serverPingStatus,
+                serverSshStatus = uiState.serverSshStatus,
                 onKtorStatusCheck = { viewModel.testKtorServerStatus() },
                 onServerStatusCheck = { viewModel.testServerStatus() }
             )
@@ -468,7 +471,8 @@ fun ActionButton(
 @Composable
 fun StatusCheckersSection(
     ktorServerStatus: ServerStatus,
-    serverStatus: ServerStatus,
+    serverPingStatus: ServerStatus,
+    serverSshStatus: ServerStatus,
     onKtorStatusCheck: () -> Unit,
     onServerStatusCheck: () -> Unit
 ) {
@@ -479,7 +483,9 @@ fun StatusCheckersSection(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             StatusChecker(
@@ -489,8 +495,14 @@ fun StatusCheckersSection(
             )
 
             StatusChecker(
-                title = "Target Server",
-                status = serverStatus,
+                title = "Target Server (Ping)",
+                status = serverPingStatus,
+                onCheck = onServerStatusCheck,
+            )
+
+            StatusChecker(
+                title = "Target Server (SSH)",
+                status = serverSshStatus,
                 onCheck = onServerStatusCheck,
             )
         }

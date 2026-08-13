@@ -65,21 +65,27 @@ class SenderViewModel(
     }
 
     /**
-     * Tests the server status endpoint.
+     * Tests the target server's connectivity: ping first, then (only if that
+     * succeeds) SSH.
      */
     fun testServerStatus() {
-        uiState = uiState.copy(serverStatus = ServerStatus.LOADING)
+        uiState = uiState.copy(
+            serverPingStatus = ServerStatus.LOADING,
+            serverSshStatus = ServerStatus.LOADING
+        )
         viewModelScope.launch {
             try {
                 val baseUrl = getBaseUrl()
-                val isLive = networkRepository.getServerStatus(baseUrl)
+                val result = networkRepository.getServerStatus(baseUrl, getSelectedServerToken())
                 uiState = uiState.copy(
-                    serverStatus = if (isLive) ServerStatus.LIVE else ServerStatus.DEAD,
-                    errorMessage = null
+                    serverPingStatus = if (result.pingSuccess) ServerStatus.LIVE else ServerStatus.DEAD,
+                    serverSshStatus = if (result.sshSuccess) ServerStatus.LIVE else ServerStatus.DEAD,
+                    errorMessage = if (result.isUnauthorized) result.message else null
                 )
             } catch (e: Exception) {
                 uiState = uiState.copy(
-                    serverStatus = ServerStatus.DEAD,
+                    serverPingStatus = ServerStatus.DEAD,
+                    serverSshStatus = ServerStatus.DEAD,
                     errorMessage = "Server test failed: ${e.message}"
                 )
             }
@@ -251,7 +257,8 @@ data class SenderUiState(
         port = defaultKtorPort
     ),
 
-    val serverStatus: ServerStatus = ServerStatus.UNKNOWN,
+    val serverPingStatus: ServerStatus = ServerStatus.UNKNOWN,
+    val serverSshStatus: ServerStatus = ServerStatus.UNKNOWN,
     val ktorServerStatus: ServerStatus = ServerStatus.UNKNOWN,
     val isWakeUpInProgress: Boolean = false,
     val isShutdownInProgress: Boolean = false,
