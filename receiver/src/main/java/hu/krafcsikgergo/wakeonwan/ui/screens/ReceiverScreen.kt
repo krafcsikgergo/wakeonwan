@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
@@ -96,7 +97,9 @@ fun ReceiverScreen(navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) 
                         context.stopService(stopIntent)
                         viewModel.stopKtorServer()
                     },
-                    isStoppingInProgress = uiState.isKtorServerOperationInProgress
+                    isStoppingInProgress = uiState.isKtorServerOperationInProgress,
+                    onCheckConnection = { viewModel.checkConnection() },
+                    isCheckingConnection = uiState.isCheckingConnection
                 )
             } else {
                 // Configuration Input Sections
@@ -151,7 +154,9 @@ fun ServerRunningSection(
     serverData: hu.krafcsikgergo.wakeonwan.services.receiver.ServerData,
     serverStarted: Long?,
     onStopServer: () -> Unit,
-    isStoppingInProgress: Boolean
+    isStoppingInProgress: Boolean,
+    onCheckConnection: () -> Unit,
+    isCheckingConnection: Boolean
 ) {
     var elapsedTime by remember { mutableLongStateOf(0L) }
 
@@ -237,16 +242,31 @@ fun ServerRunningSection(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            ActionButton(
-                onClick = onStopServer,
-                enabled = !isStoppingInProgress,
-                icon = Icons.Default.Stop,
-                text = if (isStoppingInProgress) "Stopping..." else "Stop Server",
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = MaterialTheme.colorScheme.onError,
-                isLoading = isStoppingInProgress,
-                modifier = Modifier.width(160.dp)
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ActionButton(
+                    onClick = onCheckConnection,
+                    enabled = !isCheckingConnection,
+                    icon = Icons.Default.NetworkCheck,
+                    text = if (isCheckingConnection) "Checking..." else "Check Connection",
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    isLoading = isCheckingConnection,
+                    modifier = Modifier.width(160.dp)
+                )
+
+                ActionButton(
+                    onClick = onStopServer,
+                    enabled = !isStoppingInProgress,
+                    icon = Icons.Default.Stop,
+                    text = if (isStoppingInProgress) "Stopping..." else "Stop Server",
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                    isLoading = isStoppingInProgress,
+                    modifier = Modifier.width(160.dp)
+                )
+            }
         }
     }
 }

@@ -40,7 +40,19 @@ interface WakeOnLanService {
      * Executes SSH shutdown command on the target server.
      */
     suspend fun executeShutdownCommand(serverData: ServerData): Result<String>
+
+    /**
+     * Checks connectivity to the target server: first via ping, then (only if the ping
+     * succeeds) via a plain SSH connect/disconnect.
+     */
+    suspend fun checkConnection(serverData: ServerData): ConnectionCheckResult
 }
+
+data class ConnectionCheckResult(
+    val pingSuccess: Boolean,
+    val sshSuccess: Boolean,
+    val message: String
+)
 
 /**
  * Implementation of WakeOnLanService that manages Ktor server service
@@ -178,6 +190,40 @@ class WakeOnLanServiceImpl(
                 logManager.e(TAG, errorMessage, e)
                 Result.failure(Exception(errorMessage, e))
             }
+        }
+    }
+
+    override suspend fun checkConnection(serverData: ServerData): ConnectionCheckResult {
+        return withContext(Dispatchers.IO) {
+            val pingSuccess = try {
+                InetAddress.getByName(serverData.ipAddress).isReachable(1000)
+            } catch (e: Exception) {
+                logManager.e(TAG, "Ping failed: ${e.message}", e)
+                false
+            }
+
+            logManager.d(TAG, "Connection check - ping: $pingSuccess")
+
+            if (!pingSuccess) {
+                return@withContext ConnectionCheckResult(
+                    pingSuccess = false,
+                    sshSuccess = false,
+                    message = "Host is not reachable via ping, SSH test skipped"
+                )
+            }
+
+            val sshSuccess = sshManager.testConnection(serverData)
+            logManager.d(TAG, "Connection check - ssh: $sshSuccess")
+
+            ConnectionCheckResult(
+                pingSuccess = true,
+                sshSuccess = sshSuccess,
+                message = if (sshSuccess) {
+                    "Host is fully reachable (ping and SSH)"
+                } else {
+                    "Host is reachable via ping but SSH connection failed"
+                }
+            )
         }
     }
 }

@@ -32,13 +32,11 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
-import java.net.InetAddress
 
 class KtorServerService : Service() {
     private val TAG = "KtorServerService"
     private lateinit var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>
     private val dataStoreManager: DataStoreManager by inject()
-    private val sshManager: SSHManager by inject()
     private val wakeOnLanService: WakeOnLanService by inject()
     private val scheduleManager: ScheduleManager by inject()
     private val logManager: LogManager by inject()
@@ -106,15 +104,6 @@ class KtorServerService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun ping(host: String, timeout: Int = 1000): Boolean {
-        return try {
-            val inetAddress = InetAddress.getByName(host)
-            inetAddress.isReachable(timeout)
-        } catch (e: Exception) {
-            false
-        }
-    }
-
     private fun Application.configureApplication() {
         install(ContentNegotiation) {
             gson()
@@ -178,39 +167,20 @@ class KtorServerService : Service() {
                     return@get
                 }
 
-                val isReachable = withContext(Dispatchers.IO) {
-                    ping(ipAddress)
-                }
+                val result = wakeOnLanService.checkConnection(serverData)
 
-                logManager.d(TAG, "Host is reachable via ping: $isReachable")
+                logManager.d(TAG, "Connection check result - ping: ${result.pingSuccess}, ssh: ${result.sshSuccess}")
 
-                // If ping fails, don't bother testing SSH
-                if (!isReachable) {
-                    val response = mapOf(
-                        "ping" to false,
-                        "ssh" to false,
-                        "message" to "Host is not reachable via ping, SSH test skipped"
-                    )
-                    call.respond(HttpStatusCode.Companion.ServiceUnavailable, response)
-                    return@get
-                }
+                val response = mapOf(
+                    "ping" to result.pingSuccess,
+                    "ssh" to result.sshSuccess,
+                    "message" to result.message
+                )
 
-                val sshConnectable = withContext(Dispatchers.IO) {
-                    sshManager.testConnection(serverData)
-                }
-
-                logManager.d(TAG, "Host is reachable via SSH: $sshConnectable")
-
-                val response = mutableMapOf<String, Any>()
-                response["ping"] = true
-                response["ssh"] = sshConnectable
-
-                if (sshConnectable) {
-                    response["message"] = "Host is fully reachable (ping and SSH)"
-                    call.respond(HttpStatusCode.Companion.OK, response)
-                } else {
-                    response["message"] = "Host is reachable via ping but SSH connection failed"
-                    call.respond(HttpStatusCode.Companion.PartialContent, response)
+                when {
+                    !result.pingSuccess -> call.respond(HttpStatusCode.Companion.ServiceUnavailable, response)
+                    result.sshSuccess -> call.respond(HttpStatusCode.Companion.OK, response)
+                    else -> call.respond(HttpStatusCode.Companion.PartialContent, response)
                 }
             }
 

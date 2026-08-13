@@ -255,6 +255,38 @@ class ReceiverViewModel(
     }
 
     /**
+     * Checks connectivity to the server: ping first, then (only if that succeeds)
+     * a plain SSH connect/disconnect.
+     */
+    fun checkConnection() {
+        if (!isSshConfigValid()) return
+
+        uiState = uiState.copy(isCheckingConnection = true)
+        viewModelScope.launch {
+            try {
+                val result = wakeOnLanService.checkConnection(uiState.serverData)
+                uiState = if (result.sshSuccess) {
+                    uiState.copy(
+                        isCheckingConnection = false,
+                        lastOperationMessage = result.message,
+                        errorMessage = null
+                    )
+                } else {
+                    uiState.copy(
+                        isCheckingConnection = false,
+                        errorMessage = result.message
+                    )
+                }
+            } catch (e: Exception) {
+                uiState = uiState.copy(
+                    isCheckingConnection = false,
+                    errorMessage = "Connection check error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
      * Clears any error messages.
      */
     fun clearError() {
@@ -329,6 +361,7 @@ data class ReceiverUiState(
     val isKtorServerOperationInProgress: Boolean = false,
     val isTestWakeOnLanInProgress: Boolean = false,
     val isTestSshInProgress: Boolean = false,
+    val isCheckingConnection: Boolean = false,
     val lastOperationMessage: String? = null,
     val errorMessage: String? = null,
     val serverStarted: Long? = null
