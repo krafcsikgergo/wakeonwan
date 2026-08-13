@@ -135,6 +135,11 @@ class SenderViewModel(
                             lastOperationMessage = message,
                             errorMessage = null
                         )
+                        // The shutdown response can't reliably confirm the server actually
+                        // powered off (its own connection dies mid-request), so re-check
+                        // reachability shortly after to show the real outcome.
+                        delay(5000)
+                        testServerStatus()
                     },
                     onFailure = { exception ->
                         uiState = uiState.copy(

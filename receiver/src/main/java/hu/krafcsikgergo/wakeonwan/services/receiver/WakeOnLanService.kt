@@ -175,16 +175,29 @@ class WakeOnLanServiceImpl(
     override suspend fun executeShutdownCommand(serverData: ServerData): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
-                val sshResult = sshManager.executeCommand(serverData, "sudo shutdown now")
+                val sshResult = sshManager.executeCommand(serverData, "sudo systemctl poweroff --no-block")
 
-                if (!sshResult.success) {
-                    throw sshResult.error
-                        ?: Exception("SSH command failed with exit status ${sshResult.exitStatus}")
+                when {
+                    sshResult.success -> {
+                        val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
+                        logManager.d(TAG, message)
+                        Result.success(message)
+                    }
+                    // No exception was thrown, but the channel never received a clean exit
+                    // status - this is the expected signature of the server's own shutdown
+                    // killing the SSH connection before it could report back, so treat it as
+                    // a probable success rather than a failure.
+                    sshResult.error == null && sshResult.exitStatus == -1 -> {
+                        val message =
+                            "Shutdown request sent to ${serverData.ipAddress}; connection was lost, which usually means it's powering off"
+                        logManager.d(TAG, message)
+                        Result.success(message)
+                    }
+                    else -> {
+                        throw sshResult.error
+                            ?: Exception("SSH command failed with exit status ${sshResult.exitStatus}")
+                    }
                 }
-
-                val message = "Shutdown command executed successfully on ${serverData.ipAddress}"
-                logManager.d(TAG, message)
-                Result.success(message)
             } catch (e: Exception) {
                 val errorMessage = "SSH connection failed to ${serverData.ipAddress}: ${e.message}"
                 logManager.e(TAG, errorMessage, e)
