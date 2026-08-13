@@ -14,5 +14,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Wake on WAN"
-include(":app")
- 
+include(":common")
+include(":receiver")
+include(":sender")
