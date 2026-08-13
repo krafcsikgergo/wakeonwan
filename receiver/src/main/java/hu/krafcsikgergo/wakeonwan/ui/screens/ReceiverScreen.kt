@@ -34,18 +34,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import hu.krafcsikgergo.wakeonwan.common.services.LogManager
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.IPTextField
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.MacAddressTextField
-import hu.krafcsikgergo.wakeonwan.common.ui.composables.PasswordInputField
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.PortTextField
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.UsernameInput
 import hu.krafcsikgergo.wakeonwan.common.ui.composables.TopRow
 import hu.krafcsikgergo.wakeonwan.services.receiver.KtorServerService
+import hu.krafcsikgergo.wakeonwan.ui.generateQrCodeBitmap
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 
@@ -58,7 +63,8 @@ fun ReceiverScreen(navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) 
     // Handle toast messages
     uiState.lastOperationMessage?.let { message ->
         LaunchedEffect(message) {
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT)
+                .show()
             viewModel.clearLastOperationMessage()
         }
     }
@@ -66,7 +72,8 @@ fun ReceiverScreen(navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) 
     // Handle error messages
     uiState.errorMessage?.let { message ->
         LaunchedEffect(message) {
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT)
+                .show()
             viewModel.clearError()
         }
     }
@@ -120,9 +127,12 @@ fun ReceiverScreen(navigateToSchedules: () -> Unit, navigateToLogs: () -> Unit) 
                         }
                     },
                     onUsernameChange = { viewModel.updateUsername(it) },
-                    onPasswordChange = { viewModel.updatePassword(it) },
                     onTestSshClick = { viewModel.testSshConnection() },
-                    isTestSshInProgress = uiState.isTestSshInProgress
+                    isTestSshInProgress = uiState.isTestSshInProgress,
+                    hasSshKey = uiState.hasSshKey,
+                    sshPublicKey = uiState.sshPublicKey,
+                    isGeneratingSshKey = uiState.isGeneratingSshKey,
+                    onGenerateSshKeyClick = { viewModel.generateSshKey() }
                 )
 
             }
@@ -339,10 +349,15 @@ fun SSHConfigurationSection(
     serverData: hu.krafcsikgergo.wakeonwan.services.receiver.ServerData,
     onPortChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
-    onPasswordChange: (String) -> Unit,
     onTestSshClick: () -> Unit,
-    isTestSshInProgress: Boolean
+    isTestSshInProgress: Boolean,
+    hasSshKey: Boolean,
+    sshPublicKey: String?,
+    isGeneratingSshKey: Boolean,
+    onGenerateSshKeyClick: () -> Unit
 ) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -391,21 +406,71 @@ fun SSHConfigurationSection(
                 onValueChange = onPortChange
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                UsernameInput(
-                    value = serverData.username,
-                    onValueChange = onUsernameChange,
-                    modifier = Modifier.weight(1f)
+            UsernameInput(
+                value = serverData.username,
+                onValueChange = onUsernameChange,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (hasSshKey) "SSH key configured" else "No SSH key",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                PasswordInputField(
-                    password = serverData.password,
-                    onPasswordChanged = onPasswordChange,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (hasSshKey) {
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(sshPublicKey.orEmpty()))
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Public key copied to clipboard",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor = MaterialTheme.colorScheme.onSecondary
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                        ) {
+                            Text(
+                                text = "Copy Key",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onGenerateSshKeyClick,
+                        enabled = !isGeneratingSshKey,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onTertiary
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                isGeneratingSshKey -> "Generating..."
+                                hasSshKey -> "Regenerate"
+                                else -> "Generate Key"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                }
             }
         }
     }

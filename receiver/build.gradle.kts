@@ -62,7 +62,9 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.1.0-rc01")
     implementation("androidx.activity:activity-ktx:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("com.jcraft:jsch:0.1.55")
+    implementation("com.github.mwiede:jsch:0.2.21")
+    implementation("androidx.security:security-crypto:1.0.0")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.navigation:navigation-compose:2.9.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 

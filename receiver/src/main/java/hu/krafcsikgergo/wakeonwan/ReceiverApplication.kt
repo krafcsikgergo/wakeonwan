@@ -8,6 +8,10 @@ import hu.krafcsikgergo.wakeonwan.services.DataStoreManager
 import hu.krafcsikgergo.wakeonwan.services.DataStoreManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.SSHManagerImpl
+import hu.krafcsikgergo.wakeonwan.services.receiver.SshKeyManager
+import hu.krafcsikgergo.wakeonwan.services.receiver.SshKeyManagerImpl
+import hu.krafcsikgergo.wakeonwan.services.receiver.PairingTokenManager
+import hu.krafcsikgergo.wakeonwan.services.receiver.PairingTokenManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManager
 import hu.krafcsikgergo.wakeonwan.services.receiver.ScheduleManagerImpl
 import hu.krafcsikgergo.wakeonwan.services.receiver.WakeOnLanService
@@ -40,6 +44,8 @@ class ReceiverApplication : Application() {
                     singleOf(::DataStoreManagerImpl).bind<DataStoreManager>()
                     singleOf(::LogManagerImpl).bind<LogManager>()
                     singleOf(::WakeOnLanServiceImpl).bind<WakeOnLanService>()
+                    singleOf(::SshKeyManagerImpl).bind<SshKeyManager>()
+                    singleOf(::PairingTokenManagerImpl).bind<PairingTokenManager>()
                     singleOf(::SSHManagerImpl).bind<SSHManager>()
                     singleOf(::ScheduleManagerImpl).bind<ScheduleManager>()
 

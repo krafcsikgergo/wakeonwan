@@ -10,6 +10,5 @@ data class ServerData(
 
     // ssh access
     val sshPort: Int = 22,
-    val username: String,
-    val password: String
+    val username: String
 )

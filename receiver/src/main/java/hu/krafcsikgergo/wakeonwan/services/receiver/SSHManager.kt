@@ -22,7 +22,8 @@ data class SshCommandResult(
 )
 
 class SSHManagerImpl(
-    private val logManager: LogManager
+    private val logManager: LogManager,
+    private val sshKeyManager: SshKeyManager
 ) : SSHManager {
     private val TAG = "SSHManager"
 
@@ -30,9 +31,18 @@ class SSHManagerImpl(
         serverData: ServerData
     ) = withContext(Dispatchers.IO) {
         val jsch = JSch()
+
+        val privateKey = sshKeyManager.getPrivateKeyBytes()
+            ?: error("No SSH key pair has been generated yet")
+        jsch.addIdentity("receiver-key", privateKey, sshKeyManager.getPublicKeyBytes(), null)
+
+        logManager.d(
+            TAG,
+            "Connecting to ${serverData.username}@${serverData.ipAddress}:${serverData.sshPort} using key: ${sshKeyManager.getPublicKey()}"
+        )
+
         val session =
             jsch.getSession(serverData.username, serverData.ipAddress, serverData.sshPort)
-        session.setPassword(serverData.password)
         session.setConfig("StrictHostKeyChecking", "no")
 
         // Add timeout settings for better reliability
